@@ -849,3 +849,61 @@ def test_ppt_checkout_credits_mitigations(tmp_path: Path) -> None:
     """)
     ppt = [f for f in _findings(tmp_path, wf) if f.check_id == "pull-request-target-checkout"]
     assert ppt and ppt[0].severity is Severity.HIGH  # mitigado, não CRITICAL cego
+
+
+# Benchmark vs zizmor (2026-07-22): fechando gaps de cobertura de CI/CD.
+def test_secrets_inherit_flagged(tmp_path: Path) -> None:
+    wf = textwrap.dedent("""\
+        on: push
+        permissions: {}
+        jobs:
+          call:
+            uses: org/repo/.github/workflows/ci.yml@main
+            secrets: inherit
+    """)
+    assert "secrets-inherit" in _ids(tmp_path, wf)
+
+
+def test_explicit_secrets_not_flagged(tmp_path: Path) -> None:
+    wf = textwrap.dedent("""\
+        on: push
+        permissions: {}
+        jobs:
+          call:
+            uses: org/repo/.github/workflows/ci.yml@main
+            secrets:
+              FOO: ${{ secrets.FOO }}
+    """)
+    assert "secrets-inherit" not in _ids(tmp_path, wf)
+
+
+def test_unpinned_container_image_flagged(tmp_path: Path) -> None:
+    wf = textwrap.dedent("""\
+        on: push
+        permissions: {}
+        jobs:
+          b:
+            runs-on: ubuntu-latest
+            container:
+              image: node:18
+            steps:
+              - run: echo hi
+    """)
+    assert "unpinned-container-image" in _ids(tmp_path, wf)
+
+
+def test_digest_pinned_image_not_flagged(tmp_path: Path) -> None:
+    digest = "a" * 64
+    wf = textwrap.dedent(f"""\
+        on: push
+        permissions: {{}}
+        jobs:
+          b:
+            runs-on: ubuntu-latest
+            services:
+              db:
+                image: postgres@sha256:{digest}
+            steps:
+              - run: echo hi
+    """)
+    assert "unpinned-container-image" not in _ids(tmp_path, wf)

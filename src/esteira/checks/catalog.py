@@ -120,6 +120,26 @@ CATALOG: dict[str, CheckMeta] = {
             "CWE-732",
         ),
         CheckMeta(
+            "secrets-inherit",
+            "Reusable workflow recebe TODO o cofre de segredos (secrets: inherit)",
+            Severity.MEDIUM,
+            "'secrets: inherit' entrega todos os segredos do repositório ao workflow chamado. "
+            "Passe apenas o necessário explicitamente (secrets:\\n  FOO: ${{ secrets.FOO }}), "
+            "sobretudo se o reusable não for fixado por SHA ou for de outra organização.",
+            "A08:2021 Software and Data Integrity Failures",
+            "CWE-522",
+        ),
+        CheckMeta(
+            "unpinned-container-image",
+            "Imagem de contêiner fixada por tag (não por digest)",
+            Severity.LOW,
+            "Imagens em container:/services:/docker:// fixadas por tag podem ser republicadas "
+            "com conteúdo diferente. Fixe por digest (imagem@sha256:...) para builds "
+            "reprodutíveis e imunes a supply-chain.",
+            "A08:2021 Software and Data Integrity Failures",
+            "CWE-1357",
+        ),
+        CheckMeta(
             "invalid-yaml",
             "Workflow com YAML inválido (análise estrutural pulada)",
             Severity.HIGH,

@@ -105,6 +105,8 @@ def run_all(wf: Workflow) -> list[Finding]:
     out += check_secret_in_run(wf)
     out += check_curl_pipe(wf)
     out += check_unpinned(wf)
+    out += check_secrets_inherit(wf)
+    out += check_unpinned_images(wf)
     return [f for f in out if not _is_suppressed(wf, f)]
 
 
@@ -358,6 +360,86 @@ def _uses_finding(
         detail = f"'{action}' fixada por '{ref}' (não é SHA)."
     finding = make_finding(check, wf.path, at, detail, evidence=f"{action}@{ref}")
     return finding, at + 1
+
+
+def check_secrets_inherit(wf: Workflow) -> list[Finding]:
+    """Job que chama um reusable workflow com 'secrets: inherit' entrega todo o cofre."""
+    data = wf.data
+    jobs = data.get("jobs") if isinstance(data, dict) else None
+    if not isinstance(jobs, dict):
+        return []
+    out: list[Finding] = []
+    cursor = 1
+    for name, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        if isinstance(job.get("uses"), str) and job.get("secrets") == "inherit":
+            line = wf.find_line("inherit", start=cursor)
+            cursor = line + 1
+            out.append(
+                make_finding(
+                    "secrets-inherit",
+                    wf.path,
+                    line,
+                    f"job '{name}' chama um reusable workflow com 'secrets: inherit' "
+                    "(passa todo o cofre de segredos).",
+                    evidence="secrets: inherit",
+                )
+            )
+    return out
+
+
+def check_unpinned_images(wf: Workflow) -> list[Finding]:
+    """Imagens de contêiner (container:/services:/docker://) fixadas por tag, não por digest."""
+    out: list[Finding] = []
+    cursor = 1
+    for job in _jobs(wf.data):
+        for image in _job_images(job):
+            if "@sha256:" in image:
+                continue
+            line = wf.find_line(image, start=cursor)
+            cursor = line + 1
+            out.append(
+                make_finding(
+                    "unpinned-container-image",
+                    wf.path,
+                    line,
+                    f"imagem '{image}' fixada por tag (não por digest).",
+                    evidence=image,
+                )
+            )
+    for step, _env in _step_contexts(wf.data):
+        uses = step.get("uses")
+        if isinstance(uses, str) and uses.startswith("docker://") and "@sha256:" not in uses:
+            line = wf.find_line(uses, start=cursor)
+            cursor = line + 1
+            out.append(
+                make_finding(
+                    "unpinned-container-image",
+                    wf.path,
+                    line,
+                    f"imagem '{uses}' (docker://) fixada por tag (não por digest).",
+                    evidence=uses,
+                )
+            )
+    return out
+
+
+def _job_images(job: dict[str, Any]) -> list[str]:
+    images: list[str] = []
+    container = job.get("container")
+    if isinstance(container, str):
+        images.append(container)
+    elif isinstance(container, dict) and isinstance(container.get("image"), str):
+        images.append(container["image"])
+    services = job.get("services")
+    if isinstance(services, dict):
+        for svc in services.values():
+            if isinstance(svc, str):
+                images.append(svc)
+            elif isinstance(svc, dict) and isinstance(svc.get("image"), str):
+                images.append(svc["image"])
+    return images
 
 
 def _ref_is_pr_code(ref: str) -> bool:
