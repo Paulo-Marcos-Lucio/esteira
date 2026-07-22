@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 from esteira.checks.detectors import _EXPR
 from esteira.checks.engine import scan
 from esteira.cli import app
-from esteira.core.models import ScanResult
+from esteira.core.models import ScanResult, Severity
 
 runner = CliRunner()
 
@@ -754,3 +754,98 @@ def test_script_injection_through_format_escaped_braces(tmp_path: Path) -> None:
         "echo ${{ format('{{ {0} }}', github.event.issue.title) }}", trigger="issues"
     )
     assert "script-injection" in _ids(tmp_path, wf)
+
+
+# =========================================================================== #
+# Bateria de execução real (2026-07-22) em 8 repos públicos — calibração de
+# campo achada na auditoria adversarial multidimensional.
+# =========================================================================== #
+
+
+def _findings(tmp_path: Path, text: str) -> list:
+    return _scan_text(tmp_path, text).findings
+
+
+# E1+E4 — reusable workflow: severidade LOW (não thirdparty HIGH) e cada job em sua linha.
+def test_reusable_workflows_low_and_distinct_lines(tmp_path: Path) -> None:
+    wf = textwrap.dedent("""\
+        on: push
+        permissions: {}
+        jobs:
+          a:
+            uses: some-org/repo/.github/workflows/ci.yml@main
+          b:
+            uses: some-org/repo/.github/workflows/ci.yml@main
+    """)
+    ru = [f for f in _findings(tmp_path, wf) if f.check_id == "unpinned-reusable-workflow"]
+    assert len(ru) == 2
+    assert all(f.severity is Severity.LOW for f in ru)
+    assert len({f.line for f in ru}) == 2  # linhas distintas (5 e 7), sem colar na 1ª
+    assert "unpinned-action-thirdparty" not in {f.check_id for f in _findings(tmp_path, wf)}
+
+
+def test_thirdparty_action_still_high(tmp_path: Path) -> None:
+    wf = _STEPS.format(trigger="push") + "      - uses: some-org/evil-action@v1\n"
+    third = [f for f in _findings(tmp_path, wf) if f.check_id == "unpinned-action-thirdparty"]
+    assert third and third[0].severity is Severity.HIGH
+
+
+# E2+E5 — dangerous-trigger agora é LOW e cobre issue_comment (gatilho de pwn-request).
+def test_dangerous_trigger_is_low(tmp_path: Path) -> None:
+    wf = _one_step_run("echo hi", trigger="pull_request_target")
+    dt = [f for f in _findings(tmp_path, wf) if f.check_id == "dangerous-trigger"]
+    assert dt and dt[0].severity is Severity.LOW
+
+
+def test_issue_comment_is_a_dangerous_trigger(tmp_path: Path) -> None:
+    wf = _one_step_run("echo hi", trigger="issue_comment")
+    assert "dangerous-trigger" in _ids(tmp_path, wf)
+
+
+# E3 — supressão inline '# zizmor: ignore' e '# esteira: ignore' é respeitada.
+def test_inline_suppression_is_honored(tmp_path: Path) -> None:
+    z = "on: pull_request_target  # zizmor: ignore[dangerous-triggers]\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+    assert "dangerous-trigger" not in _ids(tmp_path, z)
+    e = "on: pull_request_target  # esteira: ignore\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+    assert "dangerous-trigger" not in _ids(tmp_path, e)
+
+
+# E6 — self-hosted via runner group (transformers usa 'group: amd-mi300-1gpu').
+def test_self_hosted_via_runner_group(tmp_path: Path) -> None:
+    wf = textwrap.dedent("""\
+        on: push
+        permissions: {}
+        jobs:
+          b:
+            runs-on:
+              group: amd-mi300-1gpu
+            steps:
+              - run: echo hi
+    """)
+    assert "self-hosted-runner" in _ids(tmp_path, wf)
+
+
+# E7 — reusable workflow (workflow_call) herda permissões do CALLER, não da org.
+def test_workflow_call_missing_permissions_message(tmp_path: Path) -> None:
+    wf = "on: workflow_call\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n"
+    mp = [f for f in _findings(tmp_path, wf) if f.check_id == "missing-permissions"]
+    assert mp and "caller" in mp[0].detail
+
+
+# E8 — ppt-checkout credita mitigações (persist-credentials:false + sparse-checkout) → HIGH.
+def test_ppt_checkout_credits_mitigations(tmp_path: Path) -> None:
+    wf = textwrap.dedent("""\
+        on: pull_request_target
+        permissions: {}
+        jobs:
+          b:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/checkout@v4
+                with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  persist-credentials: false
+                  sparse-checkout: docs
+    """)
+    ppt = [f for f in _findings(tmp_path, wf) if f.check_id == "pull-request-target-checkout"]
+    assert ppt and ppt[0].severity is Severity.HIGH  # mitigado, não CRITICAL cego

@@ -96,7 +96,7 @@ def run_all(wf: Workflow) -> list[Finding]:
         )
     if wf.data is None:
         out += _fallback_checks(wf)
-        return out
+        return [f for f in out if not _is_suppressed(wf, f)]
     out += check_triggers(wf)
     out += check_ppt_checkout(wf)
     out += check_permissions(wf)
@@ -105,7 +105,21 @@ def run_all(wf: Workflow) -> list[Finding]:
     out += check_secret_in_run(wf)
     out += check_curl_pipe(wf)
     out += check_unpinned(wf)
-    return out
+    return [f for f in out if not _is_suppressed(wf, f)]
+
+
+def _is_suppressed(wf: Workflow, finding: Finding) -> bool:
+    """Respeita supressão inline '# zizmor: ignore' / '# esteira: ignore' na linha do achado."""
+    lines = wf.lines
+    index = finding.line - 1
+    if not 0 <= index < len(lines):
+        return False
+    lowered = lines[index].lower()
+    if "esteira: ignore" in lowered:
+        return True
+    # zizmor: ignore[regra] — respeita a supressão (a nossa checagem pode ter outro nome, mas o
+    # mantenedor já declarou aquele ponto como revisado/seguro).
+    return "zizmor: ignore" in lowered
 
 
 # --------------------------------------------------------------------------- #
@@ -199,7 +213,7 @@ def _resolve_env_refs(
 def check_triggers(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
     names = trigger_names(wf.data or {})
-    for dangerous in ("pull_request_target", "workflow_run"):
+    for dangerous in ("pull_request_target", "workflow_run", "issue_comment"):
         if dangerous in names:
             out.append(
                 make_finding(
@@ -302,34 +316,48 @@ def check_curl_pipe(wf: Workflow) -> list[Finding]:
 
 def check_unpinned(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
+    cursor = 1  # avança pela ordem do arquivo p/ 'uses:' idênticos não colarem na 1ª linha
     for job in _jobs(wf.data):
-        job_use = _uses_finding(wf, job.get("uses"))  # reusable workflow
-        if job_use is not None:
-            out.append(job_use)
-    for step, _env in _step_contexts(wf.data):
-        step_use = _uses_finding(wf, step.get("uses"))
-        if step_use is not None:
-            out.append(step_use)
+        finding, cursor = _uses_finding(wf, job.get("uses"), cursor=cursor)  # reusable workflow
+        if finding is not None:
+            out.append(finding)
+        for step in _steps_of(job):
+            finding, cursor = _uses_finding(wf, step.get("uses"), cursor=cursor)
+            if finding is not None:
+                out.append(finding)
+    data = wf.data
+    runs = data.get("runs") if isinstance(data, dict) else None
+    if isinstance(runs, dict) and isinstance(runs.get("steps"), list):  # composite action
+        for step in runs["steps"]:
+            if isinstance(step, dict):
+                finding, cursor = _uses_finding(wf, step.get("uses"), cursor=cursor)
+                if finding is not None:
+                    out.append(finding)
     return out
 
 
-def _uses_finding(wf: Workflow, uses: Any, line: int | None = None) -> Finding | None:
+def _uses_finding(
+    wf: Workflow, uses: Any, *, cursor: int = 1, line: int | None = None
+) -> tuple[Finding | None, int]:
     if not isinstance(uses, str) or "@" not in uses:
-        return None  # action local (sem @) ou valor inesperado
+        return None, cursor  # action local (sem @) ou valor inesperado
     if uses.startswith(("./", "../", "docker://")):
-        return None
+        return None, cursor
     action, _, ref = uses.rpartition("@")
     if not action or not ref or _SHA.match(ref):
-        return None
-    owner = action.split("/", 1)[0]
-    check = "unpinned-action-firstparty" if owner in _FIRST_PARTY else "unpinned-action-thirdparty"
-    return make_finding(
-        check,
-        wf.path,
-        line if line is not None else wf.find_line(uses),
-        f"'{action}' fixada por '{ref}' (não é SHA).",
-        evidence=f"{action}@{ref}",
-    )
+        return None, cursor
+    at = line if line is not None else wf.find_line(uses, start=cursor)
+    if "/.github/workflows/" in action:
+        # Reusable workflow: pinar por SHA é ideal, mas @branch dentro da org é comum/aceito.
+        check = "unpinned-reusable-workflow"
+        detail = f"reusable workflow '{action}' fixado por '{ref}' (não é SHA)."
+    else:
+        owner = action.split("/", 1)[0]
+        first = owner in _FIRST_PARTY
+        check = "unpinned-action-firstparty" if first else "unpinned-action-thirdparty"
+        detail = f"'{action}' fixada por '{ref}' (não é SHA)."
+    finding = make_finding(check, wf.path, at, detail, evidence=f"{action}@{ref}")
+    return finding, at + 1
 
 
 def _ref_is_pr_code(ref: str) -> bool:
@@ -370,13 +398,25 @@ def _ppt_step_finding(
             reason, needle = f"repository={repo!r}", str(with_.get("repository", ""))
         if reason is not None:
             line = wf.find_line(needle, default=anchor, start=anchor) if needle else anchor
+            # Credita mitigações do mantenedor: persist-credentials:false + sparse-checkout de
+            # caminho não-executável reduzem (não zeram) o risco → HIGH em vez de CRITICAL.
+            mitigated = with_.get("persist-credentials") is False and "sparse-checkout" in with_
+            detail = f"checkout do código do PR ({reason}) sob pull_request_target."
+            severity = None
+            if mitigated:
+                severity = Severity.HIGH
+                detail += (
+                    " Mitigado (persist-credentials:false + sparse-checkout), mas ainda revise se o "
+                    "código do PR chega a ser executado (ex.: build que roda conf.py/scripts)."
+                )
             return (
                 make_finding(
                     "pull-request-target-checkout",
                     wf.path,
                     line,
-                    f"checkout do código do PR ({reason}) sob pull_request_target.",
+                    detail,
                     evidence=needle or reason,
+                    severity=severity,
                 ),
                 cursor,
             )
@@ -426,12 +466,18 @@ def check_permissions(wf: Workflow) -> list[Finding]:
         ]
         if not jobs or undeclared:
             alvo = ", ".join(str(n) for n in undeclared) if undeclared else "o workflow"
+            # Reusable workflow (on: workflow_call) herda do CALLER, não do padrão da org.
+            herda = (
+                "herda as permissões do workflow que o chama (caller)"
+                if "workflow_call" in trigger_names(data)
+                else "herda o padrão da organização"
+            )
             out.append(
                 make_finding(
                     "missing-permissions",
                     wf.path,
                     1,
-                    f"Sem bloco 'permissions'; herda o padrão da organização em: {alvo}.",
+                    f"Sem bloco 'permissions'; {herda} em: {alvo}.",
                 )
             )
     return out
@@ -472,7 +518,9 @@ def check_self_hosted(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
     for job in _jobs(wf.data):
         labels = _runs_on_labels_resolved(job)
-        if any("self-hosted" in str(label).lower() for label in labels):
+        runs_on = job.get("runs-on")
+        by_label = any("self-hosted" in str(label).lower() for label in labels)
+        if by_label:
             out.append(
                 make_finding(
                     "self-hosted-runner",
@@ -480,6 +528,17 @@ def check_self_hosted(wf: Workflow) -> list[Finding]:
                     wf.find_line("self-hosted"),
                     "Job roda em runner self-hosted.",
                     evidence="self-hosted",
+                )
+            )
+        elif isinstance(runs_on, dict) and "group" in runs_on:
+            group = str(runs_on["group"])
+            out.append(
+                make_finding(
+                    "self-hosted-runner",
+                    wf.path,
+                    wf.find_line("group"),
+                    f"Job usa runner group '{group}' (grupos organizam runners self-hosted).",
+                    evidence=f"group: {group}",
                 )
             )
     return out
@@ -556,7 +615,9 @@ def _fallback_checks(wf: Workflow) -> list[Finding]:
                 break
         uses_match = _USES_LINE.search(line)
         if uses_match is not None:
-            finding = _uses_finding(wf, f"{uses_match.group(1)}@{uses_match.group(2)}", line=lineno)
+            finding, _ = _uses_finding(
+                wf, f"{uses_match.group(1)}@{uses_match.group(2)}", line=lineno
+            )
             if finding is not None:
                 out.append(finding)
         if _secret_echo_leak(line):

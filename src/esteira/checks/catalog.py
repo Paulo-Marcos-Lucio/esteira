@@ -83,10 +83,11 @@ CATALOG: dict[str, CheckMeta] = {
         ),
         CheckMeta(
             "dangerous-trigger",
-            "Gatilho privilegiado (pull_request_target / workflow_run)",
-            Severity.MEDIUM,
-            "Esses gatilhos rodam no contexto do repositório-base, com segredos. Revise o que roda "
-            "neles e nunca execute código do PR.",
+            "Gatilho privilegiado (pull_request_target / workflow_run / issue_comment)",
+            Severity.LOW,
+            "Informativo: esses gatilhos rodam no contexto do repositório-base, com segredos e token "
+            "de escrita. Seguro se NÃO fizerem checkout/execução de código do PR — o risco real "
+            "(checkout do PR) é reportado à parte como 'pull-request-target-checkout'.",
             "A08:2021 Software and Data Integrity Failures",
             "CWE-269",
         ),
@@ -96,6 +97,16 @@ CATALOG: dict[str, CheckMeta] = {
             Severity.LOW,
             "Mesmo em actions oficiais (actions/*, github/*), prefira fixar por SHA para builds "
             "reprodutíveis e imunes a mudança de tag.",
+            "A08:2021 Software and Data Integrity Failures",
+            "CWE-1357",
+        ),
+        CheckMeta(
+            "unpinned-reusable-workflow",
+            "Reusable workflow fixado por branch/tag (não SHA)",
+            Severity.LOW,
+            "Reusable workflow (`org/repo/.github/workflows/x.yml@ref`) fixado por branch/tag. "
+            "Fixar por SHA endurece o supply-chain, MAS confira o contexto: dentro da mesma org o "
+            "risco é menor, e algumas infra-CI exigem `@main` (o próprio arquivo pode documentar).",
             "A08:2021 Software and Data Integrity Failures",
             "CWE-1357",
         ),
