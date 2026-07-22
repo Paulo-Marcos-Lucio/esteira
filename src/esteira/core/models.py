@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import cached_property
 from typing import Any
 
 
@@ -49,14 +50,15 @@ class Workflow:
     path: str
     text: str
     data: dict[str, Any] | None  # None se o YAML não pôde ser parseado
+    parse_error: str | None = None  # mensagem quando o YAML não parseou (data também é None)
 
-    @property
+    @cached_property
     def lines(self) -> list[str]:
         return self.text.splitlines()
 
-    def find_line(self, needle: str, default: int = 1) -> int:
+    def find_line(self, needle: str, default: int = 1, start: int = 1) -> int:
         for index, line in enumerate(self.lines, start=1):
-            if needle in line:
+            if index >= start and needle in line:
                 return index
         return default
 

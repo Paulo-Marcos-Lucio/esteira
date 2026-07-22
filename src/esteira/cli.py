@@ -81,7 +81,23 @@ def scan(
     skip: list[str] = typer.Option([], "--skip", help="Pula estas checagens."),
 ) -> None:
     """Audita os workflows do GitHub Actions."""
+    unknown = sorted((set(only) | set(skip)) - set(CATALOG))
+    if unknown:
+        err.print(f"[red]Checagem(ns) desconhecida(s):[/] {', '.join(unknown)}")
+        err.print(f"[dim]IDs válidos:[/] {', '.join(sorted(CATALOG))}")
+        raise typer.Exit(2)
+    if fmt is Format.console and output is not None:
+        raise typer.BadParameter("só faz sentido com --format json|sarif.", param_hint="--output")
+
     result = run_scan(path, only=only or None, skip=skip or None)
+    if result.files_scanned == 0:
+        err.print(
+            f"[red]Nenhum workflow encontrado em[/] [bold]{path}[/]. "
+            "Aponte para um repositório (com .github/workflows/), um diretório de "
+            "workflows, ou um arquivo .yml/.yaml."
+        )
+        raise typer.Exit(2)
+
     _emit(result, fmt, output)
     top = result.max_severity()
     raise typer.Exit(1 if top is not None and top.rank >= fail_on.rank() else 0)

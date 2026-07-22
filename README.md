@@ -99,7 +99,7 @@ src/esteira/
 └── cli.py       # interface typer
 ```
 
-Detecção **híbrida**: regras por linha (dão número de linha exato — script injection, actions não fixadas, `curl|bash`) e regras estruturais sobre a árvore YAML (gatilhos, permissões, `pull_request_target` + checkout). O loader ainda trata o clássico *gotcha* do YAML 1.1, que interpreta a chave `on:` como o booleano `true`.
+Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore já parseada (`jobs → steps → run/uses/with`). Assim, `${{ }}` dentro de `env:` ou de um comentário não é confundido com shell, os *plain scalars* de `run:` são cobertos por inteiro, a indireção por `env` (inclusive encadeada) é resolvida e a notação por colchete (`github['event']['issue']['title']`) é normalizada antes do match. Só quando o arquivo **não** parseia é que cai para um melhor-esforço por linha — e o próprio erro de sintaxe vira um achado `invalid-yaml` de severidade alta (**fail-closed**: um arquivo não-analisado não passa o CI escondido atrás de um erro). O loader trata o clássico *gotcha* do YAML 1.1 (`on:` → booleano `true`) e a varredura é blindada por arquivo: nenhuma exceção de parse derruba a análise dos demais.
 
 ---
 
@@ -109,10 +109,24 @@ Ferramenta **defensiva**, para auditar pipelines que você mantém ou tem autori
 
 ---
 
+## 🚧 Limitações conhecidas
+
+Análise estática não substitui revisão humana, e a Esteira é honesta sobre o que **não** cobre hoje:
+
+- **Exfiltração de segredo por rede** (`curl -d "t=${{ secrets.X }}" host`) não é marcada: enviar um token a um host legítimo (`Authorization: Bearer`) é uso normal, e flagar geraria falso-positivo demais. Apenas `echo`/`printf` de segredo — que vaza no log — é apontado.
+- **`with.args`/`entrypoint` de actions `docker://`** não são inspecionados; os sinks de execução varridos são `run:` e o `script:` do `actions/github-script`.
+- **Precisão de linha** em achados de permissão a nível de *job* aponta para o primeiro bloco `permissions:` do arquivo (o texto do finding diz qual job).
+- **Cobertura de runner** limita-se a labels literais e `matrix` resolvível estaticamente; um `runs-on` de expressão dinâmica não-resolvível não é classificado.
+
+Contribuições que fechem esses gaps (com testes de regressão) são bem-vindas.
+
+---
+
 ## 🧭 Roadmap
 
 - [ ] Suporte a monorepo (varrer múltiplos `.github/workflows`).
 - [ ] Checagem de `GITHUB_TOKEN` passado a actions de terceiros.
+- [ ] Detector dedicado de exfiltração de segredo (com alowlist de hosts).
 - [ ] Regras para GitLab CI e Azure Pipelines.
 - [ ] Auto-fix sugerido (env indirection para script injection).
 

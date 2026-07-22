@@ -37,12 +37,25 @@ def _yaml_in(directory: Path) -> list[Path]:
 
 def load(path: Path | str) -> Workflow:
     text = Path(path).read_text(encoding="utf-8", errors="replace")
+    parse_error: str | None = None
     try:
         parsed = yaml.safe_load(text)
-    except yaml.YAMLError:
+    except (yaml.YAMLError, RecursionError, ValueError) as exc:
+        # Não só YAMLError: flow profundamente aninhado estoura RecursionError, que
+        # também precisa virar 'invalid-yaml' em vez de derrubar a varredura.
         parsed = None
+        parse_error = _format_yaml_error(exc)
     data = parsed if isinstance(parsed, dict) else None
-    return Workflow(path=str(path), text=text, data=data)
+    return Workflow(path=str(path), text=text, data=data, parse_error=parse_error)
+
+
+def _format_yaml_error(exc: Exception) -> str:
+    """Mensagem curta e legível a partir de um erro de parse."""
+    problem = getattr(exc, "problem", None) or type(exc).__name__
+    mark = getattr(exc, "problem_mark", None)
+    if mark is not None:
+        return f"{problem} (linha {mark.line + 1}, coluna {mark.column + 1})"
+    return str(problem)
 
 
 def get_triggers(data: dict[Any, Any]) -> Any:

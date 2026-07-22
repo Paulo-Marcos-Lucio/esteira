@@ -108,6 +108,16 @@ CATALOG: dict[str, CheckMeta] = {
             "A01:2021 Broken Access Control",
             "CWE-732",
         ),
+        CheckMeta(
+            "invalid-yaml",
+            "Workflow com YAML inválido (análise estrutural pulada)",
+            Severity.HIGH,
+            "Corrija a sintaxe YAML: enquanto o arquivo não parseia, as checagens estruturais "
+            "(gatilhos, permissões, checkout de PR) não rodam e podem esconder falhas — por isso "
+            "isto falha o CI por padrão (fail-closed), em vez de passar como se estivesse limpo.",
+            None,
+            "CWE-1288",
+        ),
     ]
 }
 
