@@ -127,9 +127,9 @@ Contribuições que fechem esses gaps (com testes de regressão) são bem-vindas
 
 - [x] Suporte a monorepo (varrer múltiplos `.github/workflows`).
 - [x] Checagem de `GITHUB_TOKEN` passado a actions de terceiros.
+- [x] Auto-fix **sugerido** (env indirection para script injection) — o achado traz o padrão de correção pronto (mover a expressão para `env:` e usar `"$VAR"`/`process.env`); a ferramenta sugere, não reescreve o YAML.
 - [ ] Detector dedicado de exfiltração de segredo (com alowlist de hosts).
 - [ ] Regras para GitLab CI e Azure Pipelines.
-- [ ] Auto-fix sugerido (env indirection para script injection).
 
 ---
 

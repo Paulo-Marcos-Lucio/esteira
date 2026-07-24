@@ -7,6 +7,14 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **Correção sugerida (env indirection)** em cada achado de `script-injection`: o finding passa
+  a carregar uma `fix_suggestion` concreta — mover a expressão `${{ … }}` não-confiável para um
+  bloco `env:` e referenciá-la como `"$VAR"` no `run:` (ou `process.env.VAR` quando o sink é o
+  `script:` do `actions/github-script`). O nome da variável é derivado do último segmento do
+  contexto (`github.event.issue.title` → `TITLE`). Aparece nos relatórios JSON (campo
+  `fix_suggestion`) e SARIF (na mensagem). É **enriquecimento da recomendação**, não uma nova
+  detecção nem reescrita do YAML: a ferramenta sugere o padrão, sem afirmar que aplicá-lo torna
+  o workflow seguro. As demais checagens seguem com `fix_suggestion` nulo.
 - Suporte a **monorepo** na descoberta de workflows: `iter_workflow_files` agora varre
   recursivamente e encontra todo `.github/workflows/` sob o caminho apontado — o do
   repositório e o de cada subprojeto — em vez de apenas o do nível superior. Diretórios de

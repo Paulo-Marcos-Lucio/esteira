@@ -81,6 +81,8 @@ _USES_LINE = re.compile(r"""uses:\s*['"]?([^'"\s@]+)@([^'"\s}\],]+)""")
 _FIRST_PARTY = {"actions", "github"}
 # Referência a um segredo dentro de uma expressão: qualquer secrets.X ou o github.token.
 _SECRET_REF = re.compile(r"\bsecrets\.[A-Za-z_]\w*|\bgithub\.token\b", re.IGNORECASE)
+# Identificador final de um contexto (github.event.issue.title → title) p/ nomear a env var.
+_LAST_IDENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*$")
 
 
 def run_all(wf: Workflow) -> list[Finding]:
@@ -232,25 +234,58 @@ def check_triggers(wf: Workflow) -> list[Finding]:
     return out
 
 
-def _exec_texts(step: dict[str, Any]) -> list[str]:
-    """Textos EXECUTADOS de um step onde ${{ }} é interpolado: run e o script do github-script."""
-    texts: list[str] = []
+def _exec_texts(step: dict[str, Any]) -> list[tuple[str, str]]:
+    """(sink, texto) executados onde ${{ }} é interpolado.
+
+    ``sink`` é ``"run"`` (shell) ou ``"github-script"`` (JS) — a correção sugerida difere:
+    ``"$VAR"`` no shell, ``process.env.VAR`` no JS.
+    """
+    texts: list[tuple[str, str]] = []
     run = step.get("run")
     if isinstance(run, str):
-        texts.append(run)
+        texts.append(("run", run))
     uses = step.get("uses")
     if isinstance(uses, str) and uses.startswith("actions/github-script"):
         with_ = step.get("with")
         script = with_.get("script") if isinstance(with_, dict) else None
         if isinstance(script, str):
-            texts.append(script)
+            texts.append(("github-script", script))
     return texts
+
+
+def _env_var_name(hit: str) -> str:
+    """Nome de env var a sugerir a partir do contexto (github.event.issue.title → TITLE)."""
+    match = _LAST_IDENT.search(hit)
+    return match.group(1).upper() if match is not None else "UNTRUSTED_INPUT"
+
+
+def _injection_fix(expr: str, hit: str, *, in_js: bool) -> str:
+    """Sugestão CONCRETA de correção por env indirection para um script-injection.
+
+    Move a expressão não-confiável para um bloco ``env:`` (onde ela vira DADO, não texto
+    reinterpretado pelo shell/JS) e referencia a variável — ``"$VAR"`` no ``run:``,
+    ``process.env.VAR`` no ``github-script``. É enriquecimento do achado (a ferramenta NÃO
+    reescreve o YAML): só sugere o padrão, sem afirmar que aplicá-lo torna o workflow seguro.
+    """
+    var = _env_var_name(hit)
+    if in_js:
+        return (
+            "Correção sugerida (env indirection): passe a expressão via 'env:' e leia com "
+            f"process.env no script — não interpole {expr} direto no JS. Ex.:\n"
+            f"    env:\n      {var}: {expr}\n    with:\n      script: |\n"
+            f"        const value = process.env.{var}"
+        )
+    return (
+        "Correção sugerida (env indirection): mova a expressão para um bloco 'env:' do step e "
+        f"referencie a variável entre aspas no run:. Ex.:\n    env:\n      {var}: {expr}\n"
+        f'    run: |\n      echo "${var}"   # em vez de {expr}'
+    )
 
 
 def check_script_injection(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
     for step, env_map in _step_contexts(wf.data):
-        for text in _exec_texts(step):
+        for sink, text in _exec_texts(step):
             for match in _EXPR.finditer(text):
                 resolved = _resolve_env_refs(match.group(0), env_map)
                 hit = _untrusted_hit(resolved)
@@ -263,6 +298,9 @@ def check_script_injection(wf: Workflow) -> list[Finding]:
                             wf.find_line(evidence),
                             f"Contexto não-confiável interpolado: {hit}.",
                             evidence=evidence,
+                            fix_suggestion=_injection_fix(
+                                evidence, hit, in_js=sink == "github-script"
+                            ),
                         )
                     )
     return out
@@ -762,13 +800,17 @@ def _fallback_checks(wf: Workflow) -> list[Finding]:
         for match in _EXPR.finditer(line):
             hit = _untrusted_hit(match.group(1))
             if hit is not None:
+                evidence = match.group(0).strip()
                 out.append(
                     make_finding(
                         "script-injection",
                         wf.path,
                         lineno,
                         f"Contexto não-confiável interpolado: {hit}.",
-                        evidence=match.group(0).strip(),
+                        evidence=evidence,
+                        # Fallback é por linha (só quando o YAML não parseia): sem árvore de
+                        # steps para distinguir o sink, sugere-se o padrão de shell (run:).
+                        fix_suggestion=_injection_fix(evidence, hit, in_js=False),
                     )
                 )
                 break
