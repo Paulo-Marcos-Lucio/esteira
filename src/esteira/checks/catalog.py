@@ -130,6 +130,17 @@ CATALOG: dict[str, CheckMeta] = {
             "CWE-522",
         ),
         CheckMeta(
+            "secret-to-thirdparty-action",
+            "Segredo/GITHUB_TOKEN passado a action de terceiros não fixada por SHA",
+            Severity.HIGH,
+            "Não passe ${{ secrets.* }} / ${{ github.token }} via 'with:' para uma action de "
+            "terceiros fixada por tag/branch — se a tag for movida para código malicioso, ele "
+            "recebe o segredo (inclusive o GITHUB_TOKEN de escrita). Fixe a action por SHA de "
+            "commit completo (40 hex) e passe apenas o token de menor escopo necessário.",
+            "A08:2021 Software and Data Integrity Failures",
+            "CWE-522",
+        ),
+        CheckMeta(
             "unpinned-container-image",
             "Imagem de contêiner fixada por tag (não por digest)",
             Severity.LOW,
