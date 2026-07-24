@@ -79,6 +79,8 @@ _MATRIX_REF = re.compile(r"matrix\.([A-Za-z_][A-Za-z0-9_-]*)")
 # uses:@ref para o modo de fallback (flow-style: o ref não pode capturar } ] ,).
 _USES_LINE = re.compile(r"""uses:\s*['"]?([^'"\s@]+)@([^'"\s}\],]+)""")
 _FIRST_PARTY = {"actions", "github"}
+# Referência a um segredo dentro de uma expressão: qualquer secrets.X ou o github.token.
+_SECRET_REF = re.compile(r"\bsecrets\.[A-Za-z_]\w*|\bgithub\.token\b", re.IGNORECASE)
 
 
 def run_all(wf: Workflow) -> list[Finding]:
@@ -105,6 +107,7 @@ def run_all(wf: Workflow) -> list[Finding]:
     out += check_secret_in_run(wf)
     out += check_curl_pipe(wf)
     out += check_unpinned(wf)
+    out += check_secret_to_thirdparty(wf)
     out += check_secrets_inherit(wf)
     out += check_unpinned_images(wf)
     return [f for f in out if not _is_suppressed(wf, f)]
@@ -338,17 +341,32 @@ def check_unpinned(wf: Workflow) -> list[Finding]:
     return out
 
 
+def _action_ref(uses: Any) -> tuple[str, str] | None:
+    """(action, ref) de um 'uses' de action REMOTA; None se local/docker/sem '@ref'.
+
+    Classificador compartilhado de pinagem/owner: quem chama decide o que fazer com o par
+    (ex.: `_SHA.match(ref)` para pinagem, `owner in _FIRST_PARTY` para 1ª parte).
+    """
+    if not isinstance(uses, str) or "@" not in uses:
+        return None  # action local (sem @) ou valor inesperado
+    if uses.startswith(("./", "../", "docker://")):
+        return None
+    action, _, ref = uses.rpartition("@")
+    if not action or not ref:
+        return None
+    return action, ref
+
+
 def _uses_finding(
     wf: Workflow, uses: Any, *, cursor: int = 1, line: int | None = None
 ) -> tuple[Finding | None, int]:
-    if not isinstance(uses, str) or "@" not in uses:
-        return None, cursor  # action local (sem @) ou valor inesperado
-    if uses.startswith(("./", "../", "docker://")):
+    parsed = _action_ref(uses)
+    if parsed is None:
         return None, cursor
-    action, _, ref = uses.rpartition("@")
-    if not action or not ref or _SHA.match(ref):
+    action, ref = parsed
+    if _SHA.match(ref):
         return None, cursor
-    at = line if line is not None else wf.find_line(uses, start=cursor)
+    at = line if line is not None else wf.find_line(str(uses), start=cursor)
     if "/.github/workflows/" in action:
         # Reusable workflow: pinar por SHA é ideal, mas @branch dentro da org é comum/aceito.
         check = "unpinned-reusable-workflow"
@@ -360,6 +378,65 @@ def _uses_finding(
         detail = f"'{action}' fixada por '{ref}' (não é SHA)."
     finding = make_finding(check, wf.path, at, detail, evidence=f"{action}@{ref}")
     return finding, at + 1
+
+
+def _with_secret_ref(value: Any) -> str | None:
+    """Retorna a expressão ${{ secrets.X }} / ${{ github.token }} de um valor de with: (ou None).
+
+    Só olha DENTRO de ${{ }} (reusa ``_EXPR``) — assim um literal 'secrets.foo' em texto solto
+    não vira falso-positivo, só uma interpolação real de segredo.
+    """
+    if not isinstance(value, str):
+        return None
+    for match in _EXPR.finditer(value):
+        if _SECRET_REF.search(match.group(1)):
+            return match.group(0).strip()
+    return None
+
+
+def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
+    """Segredo/GITHUB_TOKEN passado via with: a uma action de TERCEIROS não fixada por SHA.
+
+    Reusa o classificador de owner/pinagem (`_action_ref` + `_FIRST_PARTY` + `_SHA`): action
+    oficial (actions/*, github/*) recebendo o token é uso normal (github-script, checkout), e
+    uma de terceiros fixada por SHA teve o código congelado/revisado — nenhuma alarma. O risco
+    real é a de terceiros por tag/branch: a tag pode ser movida para código que exfiltra o
+    segredo. Complementa 'unpinned-action-thirdparty' (que ignora se há segredo em jogo).
+    """
+    out: list[Finding] = []
+    cursor = 1
+    for step, _env in _step_contexts(wf.data):
+        with_ = step.get("with")
+        if not isinstance(with_, dict):
+            continue
+        parsed = _action_ref(step.get("uses"))
+        if parsed is None:
+            continue
+        action, ref = parsed
+        if "/.github/workflows/" in action:
+            continue  # reusable workflow recebe 'secrets:', não 'with:' — coberto à parte
+        owner = action.split("/", 1)[0]
+        if owner in _FIRST_PARTY or _SHA.match(ref):
+            continue  # oficial, ou terceiro já fixado por SHA: passar o token é aceitável
+        for key, value in with_.items():
+            secret = _with_secret_ref(value)
+            if secret is None:
+                continue
+            anchor = wf.find_line(f"{action}@{ref}", start=cursor)
+            cursor = anchor + 1
+            line = wf.find_line(secret, default=anchor, start=anchor)
+            out.append(
+                make_finding(
+                    "secret-to-thirdparty-action",
+                    wf.path,
+                    line,
+                    f"segredo ({secret}) passado via with.{key} para a action de terceiros "
+                    f"'{action}' fixada por '{ref}' (não é SHA).",
+                    evidence=secret,
+                )
+            )
+            break  # um achado por step basta
+    return out
 
 
 def check_secrets_inherit(wf: Workflow) -> list[Finding]:

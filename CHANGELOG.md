@@ -3,6 +3,16 @@
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não lançado]
+
+### Adicionado
+
+- Checagem `secret-to-thirdparty-action`: sinaliza `${{ secrets.* }}` / `${{ github.token }}`
+  (inclusive o `GITHUB_TOKEN`) passado via `with:` a uma action de **terceiros** fixada por
+  tag/branch — uma tag movida para código malicioso recebe o segredo. Reusa o classificador de
+  owner/pinagem já existente: action oficial (`actions/*`, `github/*`) ou terceiro fixado por
+  SHA não gera alarme (uso normal / código congelado). Complementa `unpinned-action-thirdparty`.
+
 ## [0.1.0] — 2026-07-21
 
 ### Adicionado

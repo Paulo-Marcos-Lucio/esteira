@@ -37,6 +37,7 @@ O Esteira encontra esses padrões e explica a correção — com número de linh
 | `script-injection` | Contexto não-confiável (`github.event.*`, `head_ref`) no `run` | 🔴 Crítica | A03 · CWE-94 |
 | `pull-request-target-checkout` | checkout de código de PR em `pull_request_target` | 🔴 Crítica | A08 · CWE-94 |
 | `unpinned-action-thirdparty` | Action de terceiros por tag, não por SHA | 🟠 Alta | A08 · CWE-1357 |
+| `secret-to-thirdparty-action` | `GITHUB_TOKEN`/segredo via `with:` para action de terceiros **não** fixada por SHA | 🟠 Alta | A08 · CWE-522 |
 | `broad-permissions` | `write-all` / escopos de escrita globais | 🟠 Alta | A01 · CWE-732 |
 | `secret-in-run` | Segredo impresso em `echo`/`printf` | 🟠 Alta | A09 · CWE-532 |
 | `curl-pipe-shell` | `curl \| bash` — código da rede sem verificação | 🟡 Média | A08 · CWE-494 |
@@ -125,7 +126,7 @@ Contribuições que fechem esses gaps (com testes de regressão) são bem-vindas
 ## 🧭 Roadmap
 
 - [ ] Suporte a monorepo (varrer múltiplos `.github/workflows`).
-- [ ] Checagem de `GITHUB_TOKEN` passado a actions de terceiros.
+- [x] Checagem de `GITHUB_TOKEN` passado a actions de terceiros.
 - [ ] Detector dedicado de exfiltração de segredo (com alowlist de hosts).
 - [ ] Regras para GitLab CI e Azure Pipelines.
 - [ ] Auto-fix sugerido (env indirection para script injection).
