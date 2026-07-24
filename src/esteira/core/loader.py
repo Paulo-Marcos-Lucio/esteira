@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -11,12 +12,20 @@ from esteira.core.models import Workflow
 
 _YAML_EXTS = {".yml", ".yaml"}
 
+# Diretórios em que nunca há workflows do *repositório* — só cópias de dependências
+# (vendoradas) ou artefatos de VCS/cache. Descer neles geraria falso-positivo (auditaríamos
+# o CI de uma dependência) e desperdiçaria I/O. Além destes, todo diretório oculto (começa
+# com ``.``) é podado, exceto o próprio ``.github``.
+_PRUNE_DIRS = frozenset({"node_modules", "venv", "__pycache__", "site-packages", "vendor"})
+
 
 def iter_workflow_files(root: Path | str) -> list[Path]:
     """Descobre os arquivos de workflow a partir de ``root``.
 
-    Aceita: um arquivo YAML direto, um repositório (procura em
-    ``.github/workflows/``) ou um diretório de workflows apontado diretamente.
+    Aceita: um arquivo YAML direto, um repositório (procura em ``.github/workflows/``)
+    ou um diretório de workflows apontado diretamente. Em um **monorepo**, encontra
+    todo ``.github/workflows/`` sob ``root`` — o do repositório e o de cada subprojeto —
+    e não apenas o do nível superior.
     """
     root = Path(root)
     if root.is_file():
@@ -24,11 +33,32 @@ def iter_workflow_files(root: Path | str) -> list[Path]:
     if not root.is_dir():
         return []
 
-    workflows_dir = root / ".github" / "workflows"
-    if workflows_dir.is_dir():
-        return _yaml_in(workflows_dir)
+    workflow_dirs = _find_workflow_dirs(root)
+    if workflow_dirs:
+        files = {p for directory in workflow_dirs for p in _yaml_in(directory)}
+        return sorted(files)
     # o usuário pode ter apontado direto para o diretório de workflows
     return _yaml_in(root)
+
+
+def _find_workflow_dirs(root: Path) -> list[Path]:
+    """Todos os ``.github/workflows/`` sob ``root`` (suporte a monorepo).
+
+    Poda diretórios de dependência vendorada e caches/VCS ocultos para não confundir o
+    CI de uma dependência com o do repositório auditado.
+    """
+    found: list[Path] = []
+    for dirpath, dirnames, _files in os.walk(root):
+        # Poda in-place: os.walk não desce nos nomes removidos de ``dirnames``.
+        dirnames[:] = [
+            name
+            for name in dirnames
+            if name not in _PRUNE_DIRS and (name == ".github" or not name.startswith("."))
+        ]
+        current = Path(dirpath)
+        if current.name == "workflows" and current.parent.name == ".github":
+            found.append(current)
+    return found
 
 
 def _yaml_in(directory: Path) -> list[Path]:

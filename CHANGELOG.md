@@ -7,6 +7,12 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- Suporte a **monorepo** na descoberta de workflows: `iter_workflow_files` agora varre
+  recursivamente e encontra todo `.github/workflows/` sob o caminho apontado — o do
+  repositório e o de cada subprojeto — em vez de apenas o do nível superior. Diretórios de
+  dependência vendorada (`node_modules`, `vendor`, `site-packages`, …) e caches/VCS ocultos
+  (exceto `.github`) são podados, para não auditar o CI de uma dependência como se fosse o do
+  repositório. Um monorepo sem workflow no topo, que antes não era varrido, passa a ser.
 - Checagem `secret-to-thirdparty-action`: sinaliza `${{ secrets.* }}` / `${{ github.token }}`
   (inclusive o `GITHUB_TOKEN`) passado via `with:` a uma action de **terceiros** fixada por
   tag/branch — uma tag movida para código malicioso recebe o segredo. Reusa o classificador de

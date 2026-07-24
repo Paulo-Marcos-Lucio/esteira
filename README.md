@@ -94,13 +94,13 @@ esteira rules
 
 ```
 src/esteira/
-├── core/        # modelos + loader (descoberta de workflows, parse YAML)
+├── core/        # modelos + loader (descoberta recursiva de workflows, parse YAML)
 ├── checks/      # catálogo declarativo, detectores (por linha + estruturais), motor
 ├── report/      # console (rich), json, sarif
 └── cli.py       # interface typer
 ```
 
-Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore já parseada (`jobs → steps → run/uses/with`). Assim, `${{ }}` dentro de `env:` ou de um comentário não é confundido com shell, os *plain scalars* de `run:` são cobertos por inteiro, a indireção por `env` (inclusive encadeada) é resolvida e a notação por colchete (`github['event']['issue']['title']`) é normalizada antes do match. Só quando o arquivo **não** parseia é que cai para um melhor-esforço por linha — e o próprio erro de sintaxe vira um achado `invalid-yaml` de severidade alta (**fail-closed**: um arquivo não-analisado não passa o CI escondido atrás de um erro). O loader trata o clássico *gotcha* do YAML 1.1 (`on:` → booleano `true`) e a varredura é blindada por arquivo: nenhuma exceção de parse derruba a análise dos demais.
+Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore já parseada (`jobs → steps → run/uses/with`). Assim, `${{ }}` dentro de `env:` ou de um comentário não é confundido com shell, os *plain scalars* de `run:` são cobertos por inteiro, a indireção por `env` (inclusive encadeada) é resolvida e a notação por colchete (`github['event']['issue']['title']`) é normalizada antes do match. Só quando o arquivo **não** parseia é que cai para um melhor-esforço por linha — e o próprio erro de sintaxe vira um achado `invalid-yaml` de severidade alta (**fail-closed**: um arquivo não-analisado não passa o CI escondido atrás de um erro). O loader trata o clássico *gotcha* do YAML 1.1 (`on:` → booleano `true`) e a varredura é blindada por arquivo: nenhuma exceção de parse derruba a análise dos demais. Em um **monorepo**, a descoberta é recursiva: encontra todo `.github/workflows/` sob o caminho apontado — o do repositório e o de cada subprojeto — podando diretórios de dependência vendorada (`node_modules`, `vendor`, …) e caches/VCS ocultos para não auditar o CI de uma dependência como se fosse o seu.
 
 ---
 
@@ -125,7 +125,7 @@ Contribuições que fechem esses gaps (com testes de regressão) são bem-vindas
 
 ## 🧭 Roadmap
 
-- [ ] Suporte a monorepo (varrer múltiplos `.github/workflows`).
+- [x] Suporte a monorepo (varrer múltiplos `.github/workflows`).
 - [x] Checagem de `GITHUB_TOKEN` passado a actions de terceiros.
 - [ ] Detector dedicado de exfiltração de segredo (com alowlist de hosts).
 - [ ] Regras para GitLab CI e Azure Pipelines.
