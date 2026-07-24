@@ -172,6 +172,7 @@ def make_finding(
     *,
     evidence: str | None = None,
     severity: Severity | None = None,
+    fix_suggestion: str | None = None,
 ) -> Finding:
     meta = CATALOG[check_id]
     return Finding(
@@ -185,4 +186,5 @@ def make_finding(
         evidence=evidence,
         cwe=meta.cwe,
         owasp=meta.owasp,
+        fix_suggestion=fix_suggestion,
     )

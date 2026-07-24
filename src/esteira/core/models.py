@@ -41,6 +41,10 @@ class Finding:
     evidence: str | None = None
     cwe: str | None = None
     owasp: str | None = None
+    # Sugestão concreta de correção específica do achado (ex.: env indirection para
+    # script-injection). Complementa a 'recommendation' genérica do catálogo; None quando
+    # a checagem não gera uma sugestão acionável por achado.
+    fix_suggestion: str | None = None
 
 
 @dataclass

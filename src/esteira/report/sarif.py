@@ -45,10 +45,13 @@ def _rules() -> list[dict[str, Any]]:
 
 
 def _result(finding: Finding) -> dict[str, Any]:
+    message = f"{finding.detail} {finding.recommendation}"
+    if finding.fix_suggestion is not None:
+        message += f" {finding.fix_suggestion}"
     return {
         "ruleId": finding.check_id,
         "level": _LEVEL[finding.severity],
-        "message": {"text": f"{finding.detail} {finding.recommendation}"},
+        "message": {"text": message},
         "locations": [
             {
                 "physicalLocation": {

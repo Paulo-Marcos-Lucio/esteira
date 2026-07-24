@@ -21,6 +21,7 @@ def finding_to_dict(finding: Finding) -> dict[str, Any]:
         "cwe": finding.cwe,
         "owasp": finding.owasp,
         "recommendation": finding.recommendation,
+        "fix_suggestion": finding.fix_suggestion,
     }
 
 
