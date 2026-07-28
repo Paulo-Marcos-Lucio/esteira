@@ -326,15 +326,27 @@ def check_secret_in_run(wf: Workflow) -> list[Finding]:
     return out
 
 
+# Redirecionamento de saída para ARQUIVO/fd nomeado (`> path`, `>> "$GITHUB_ENV"`),
+# distinto de duplicação de descritor (`2>&1`, `>&2`): o `[^\s&]` após o operador exige
+# um alvo real (nome de arquivo), não um `&`. Usado para não confundir a gravação segura
+# de um segredo em arquivo com o vazamento dele para o log.
+_REDIRECT_TO_FILE = re.compile(r">>?\s*[^\s&]")
+
+
 def _secret_echo_leak(line: str) -> bool:
     lowered = line.lower()
     if "echo" not in lowered and "printf" not in lowered:
         return False
     if not any("secrets." in m.group(1) for m in _EXPR.finditer(line)):
         return False
-    # 'echo secret | docker login --password-stdin' / 'gh auth login --with-token' NÃO vaza:
-    # o segredo vai para o stdin do próximo comando, não para o log.
-    return "--password-stdin" not in lowered and "--with-token" not in lowered
+    # Casos em que o segredo NÃO chega ao log da Action:
+    #  - vai para o stdin do próximo comando (`--password-stdin` / `--with-token`);
+    #  - é redirecionado para um ARQUIVO/fd (`printf '%s' "${{secrets.KEY}}" > id_deploy`,
+    #    `echo "${{secrets.X}}" >> "$GITHUB_ENV"`) — padrão canônico e seguro de instalar/
+    #    exportar um segredo. O que vaza é o `echo`/`printf` SEM redirecionamento (stdout → log).
+    if "--password-stdin" in lowered or "--with-token" in lowered:
+        return False
+    return not _REDIRECT_TO_FILE.search(line)
 
 
 def check_curl_pipe(wf: Workflow) -> list[Finding]:

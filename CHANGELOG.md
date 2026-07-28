@@ -5,6 +5,15 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ## [Não lançado]
 
+### Corrigido
+
+- **Falso-positivo em `secret-in-run`:** gravar um segredo em arquivo — `printf '%s' "${{ secrets.KEY }}"
+  > id_deploy`, `echo "${{ secrets.X }}" >> "$GITHUB_ENV"` — é o padrão canônico e seguro de
+  instalar/exportar um segredo e **não** vaza para o log da Action; deixou de ser marcado. O alarme
+  segue válido para `echo`/`printf` de segredo **sem** redirecionamento (stdout → log). A distinção
+  entre `> arquivo` e duplicação de descritor (`2>&1`, `>&2`) é feita explicitamente. Corrige um
+  falso-positivo comum em workflows de deploy reais (instalar chave SSH via `printf … > id_deploy`).
+
 ### Adicionado
 
 - **Correção sugerida (env indirection)** em cada achado de `script-injection`: o finding passa
