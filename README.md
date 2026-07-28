@@ -1,3 +1,5 @@
+<a href="https://paulo-marcos-lucio.github.io"><img src="https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/banner-abismo.svg" alt="Esteira — a correnteza que inspeciona o fluxo do seu CI/CD: auditor de segurança de GitHub Actions" width="100%"/></a>
+
 <div align="center">
 
 # ⚙️ Esteira
@@ -87,6 +89,25 @@ esteira rules
   with:
     sarif_file: esteira.sarif
 ```
+
+---
+
+## 🔓 Versão Pro (privada) — hardening da sua cadeia de CI/CD
+
+Este repo mostra o auditor. A **versão Pro é privada**: a **auditoria completa da sua esteira** (GitHub Actions e além), com o catálogo estendido, a **correção aplicada** nos workflows e o hardening que fecha a porta que o pipeline abre — SHA-pinning, permissões mínimas, isolamento de `pull_request_target`.
+
+- ⚙️ Auditoria de **toda a organização / monorepo**, não um arquivo;
+- 🔒 Correção aplicada (pinning, permissões, segredos) entregue via PR;
+- 📄 Evidência de segurança da cadeia de suprimentos (**OWASP A08**).
+
+> **Seu deploy roda com um token de escrita e segredos?** Um erro ali entrega o reino. Vale blindar antes.
+
+<div align="center">
+
+[![Pacotes e valores](https://img.shields.io/badge/Pacotes_e_valores-paulo--marcos--lucio.github.io-0f766e?style=for-the-badge)](https://paulo-marcos-lucio.github.io)
+[![Falar no LinkedIn](https://img.shields.io/badge/LinkedIn-Falar_agora-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/paulo-marcos-a07379174/)
+
+</div>
 
 ---
 
