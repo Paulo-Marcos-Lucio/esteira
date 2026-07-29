@@ -34,29 +34,52 @@ O Esteira encontra esses padrões e explica a correção — com número de linh
 
 ## 🔎 O que ele verifica
 
-| Checagem | Risco | Severidade | OWASP / CWE |
+As 16 checagens do catálogo — a mesma lista que `esteira rules` imprime (um teste falha o CI se
+esta tabela divergir do catálogo, inclusive na severidade).
+
+| Checagem | Risco | Severidade | OWASP 2025 / CWE |
 | --- | --- | --- | --- |
-| `script-injection` | Contexto não-confiável (`github.event.*`, `head_ref`) no `run` | 🔴 Crítica | A03 · CWE-94 |
+| `script-injection` | Contexto não-confiável (`github.event.*`, `head_ref`) no `run` | 🔴 Crítica | A05 · CWE-94 |
 | `pull-request-target-checkout` | checkout de código de PR em `pull_request_target` | 🔴 Crítica | A08 · CWE-94 |
-| `unpinned-action-thirdparty` | Action de terceiros por tag, não por SHA | 🟠 Alta | A08 · CWE-1357 |
-| `secret-to-thirdparty-action` | `GITHUB_TOKEN`/segredo via `with:` para action de terceiros **não** fixada por SHA | 🟠 Alta | A08 · CWE-522 |
+| `unpinned-action-thirdparty` | Action de terceiros por tag, não por SHA | 🟠 Alta | A03 · CWE-1357 |
+| `secret-to-thirdparty-action` | `GITHUB_TOKEN`/segredo via `with:` para action de terceiros **não** fixada por SHA | 🟠 Alta | A03 · CWE-522 |
 | `broad-permissions` | `write-all` / escopos de escrita globais | 🟠 Alta | A01 · CWE-732 |
-| `secret-in-run` | Segredo impresso em `echo`/`printf` | 🟠 Alta | A09 · CWE-532 |
-| `curl-pipe-shell` | `curl \| bash` — código da rede sem verificação | 🟡 Média | A08 · CWE-494 |
+| `secret-in-run` | Segredo impresso em `echo`/`printf` (ou no `console.log` do `github-script`) | 🟠 Alta | A09 · CWE-532 |
+| `checkout-credentials-in-artifact` | checkout sem `persist-credentials: false` + `upload-artifact` publicando o workspace | 🟠 Alta | A02 · CWE-522 |
+| `invalid-yaml` | Workflow que não parseia (análise estrutural pulada — **fail-closed**) | 🟠 Alta | — · CWE-1288 |
+| `curl-pipe-shell` | `curl \| bash` — código da rede sem verificação | 🟡 Média | A03 · CWE-494 |
 | `self-hosted-runner` | Runner self-hosted (risco em repo público) | 🟡 Média | A08 · CWE-668 |
-| `dangerous-trigger` | `pull_request_target` / `workflow_run` | 🟡 Média | A08 · CWE-269 |
-| `unpinned-action-firstparty` | Action oficial por tag | 🔵 Baixa | A08 · CWE-1357 |
+| `secrets-inherit` | `secrets: inherit` entrega todo o cofre ao reusable workflow | 🟡 Média | A03 · CWE-522 |
+| `dangerous-trigger` | `pull_request_target` / `workflow_run` / `issue_comment` | 🔵 Baixa | A08 · CWE-269 |
+| `unpinned-action-firstparty` | Action oficial por tag | 🔵 Baixa | A03 · CWE-1357 |
+| `unpinned-reusable-workflow` | Reusable workflow por branch/tag | 🔵 Baixa | A03 · CWE-1357 |
+| `unpinned-container-image` | Imagem de `container:`/`services:`/`docker://` por tag, não por digest | 🔵 Baixa | A03 · CWE-1357 |
 | `missing-permissions` | Sem bloco `permissions` explícito | 🔵 Baixa | A01 · CWE-732 |
+
+> **Edição do OWASP:** os rótulos são do **Top 10:2025**. O ano importa — `A03` é *Software Supply
+> Chain Failures* em 2025 e era *Injection* em 2021. Quem consome o relatório por máquina lê o campo
+> `owasp_edition` do JSON/SARIF em vez de interpretar a string.
 
 ---
 
 ## 🚀 Instalação
 
 ```bash
+pipx install "git+https://github.com/Paulo-Marcos-Lucio/esteira.git"   # ou pip install
+```
+
+Ou a partir do clone:
+
+```bash
 git clone https://github.com/Paulo-Marcos-Lucio/esteira.git
 cd esteira
 pip install .        # ou: pip install -e ".[dev]"
 ```
+
+> **Não use `pip install esteira`.** O nome `esteira` no PyPI é de **outra pessoa** (um servidor de
+> automação, de 2021) — o comando `esteira` nem existe naquele pacote. Este projeto não está
+> publicado no PyPI; instale pelo Git, como acima. Em CI, fixe a instalação por SHA
+> (`...esteira.git@<sha-de-40-hex>`) — é a mesma prática que o Esteira exige das suas actions.
 
 ---
 
@@ -82,13 +105,33 @@ esteira rules
 ### No próprio GitHub Actions
 
 ```yaml
-- run: pip install esteira
+- run: pip install "git+https://github.com/Paulo-Marcos-Lucio/esteira.git@<sha-de-40-hex>"
 - run: esteira scan . --fail-on high -f sarif -o esteira.sarif
-- uses: github/codeql-action/upload-sarif@v3
+- uses: github/codeql-action/upload-sarif@08d09a53f0f5d694f253bd25732e4429c9e9337f # v3
   if: always()
   with:
     sarif_file: esteira.sarif
 ```
+
+### Códigos de saída e `--fail-on`
+
+| Saída | Significado |
+| --- | --- |
+| `0` | Nenhum achado no nível de `--fail-on` ou acima (inclui "caminho existe, mas não tem workflow" — o aviso vai para o stderr) |
+| `1` | Achado com severidade `>= --fail-on` |
+| `2` | Erro de uso: caminho inexistente, ID desconhecido em `--only`/`--skip`, `--output` com `--format console` |
+
+`--fail-on` aceita `none · info · low · medium · high · critical`. O **default do Esteira é `high`**.
+Os defaults **não** são iguais em toda a suíte, e isso é deliberado: o Guardião (segredos) usa
+`medium`, porque a consequência de uma credencial vazada é categoricamente pior que a de um
+cabeçalho ausente — um scanner de segredo deve ter o gatilho mais sensível.
+
+| Ferramenta | Default de `--fail-on` |
+| --- | --- |
+| Esteira | `high` |
+| Chaveiro | `high` |
+| Sentinela | `alta` (vocabulário PT) |
+| Guardião | `medium` |
 
 ---
 
@@ -135,10 +178,12 @@ Ferramenta **defensiva**, para auditar pipelines que você mantém ou tem autori
 
 Análise estática não substitui revisão humana, e a Esteira é honesta sobre o que **não** cobre hoje:
 
-- **Exfiltração de segredo por rede** (`curl -d "t=${{ secrets.X }}" host`) não é marcada: enviar um token a um host legítimo (`Authorization: Bearer`) é uso normal, e flagar geraria falso-positivo demais. Apenas `echo`/`printf` de segredo — que vaza no log — é apontado.
+- **Exfiltração de segredo por rede** (`curl -d "t=${{ secrets.X }}" host`) não é marcada: enviar um token a um host legítimo (`Authorization: Bearer`) é uso normal, e flagar geraria falso-positivo demais. Apenas segredo impresso no log — `echo`/`printf` no `run:`, `console.log`/`core.info` no `github-script` — é apontado.
 - **`with.args`/`entrypoint` de actions `docker://`** não são inspecionados; os sinks de execução varridos são `run:` e o `script:` do `actions/github-script`.
-- **Precisão de linha** em achados de permissão a nível de *job* aponta para o primeiro bloco `permissions:` do arquivo (o texto do finding diz qual job).
 - **Cobertura de runner** limita-se a labels literais e `matrix` resolvível estaticamente; um `runs-on` de expressão dinâmica não-resolvível não é classificado.
+- **`curl | bash` com mais de 3 wrappers encadeados** (`sudo env time nice …`) deixa de casar. É troca deliberada: a forma ilimitada do padrão era exponencial em backtracking e uma linha `run:` de 129 caracteres travava a varredura por 7 s (e ~160 caracteres, por horas) — DoS do próprio portão de auditoria.
+- **`checkout-credentials-in-artifact`** exige os dois lados do vazamento: checkout sem `persist-credentials: false` **e**, depois dele, um `upload-artifact` publicando a raiz do workspace. Uma exfiltração da credencial por outro caminho (um `run:` que empacota o `.git` na mão) não é detectada.
+- **Caminho sem workflow nenhum** sai com código **0**, não 1 nem 2: o aviso vai para o stderr. Quem quiser tratar "repositório sem CI" como erro precisa checar `summary.files_scanned` do JSON.
 
 Contribuições que fechem esses gaps (com testes de regressão) são bem-vindas.
 

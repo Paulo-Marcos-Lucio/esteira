@@ -69,4 +69,9 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+# O comando mora aqui, não no ci.yml: `make`, o dev e o CI passam a rodar exatamente a mesma
+# coisa. `--cov-fail-under` é o portão que faltava — sem ele o `--cov` só imprimia um número
+# que ninguém lia, e um PR que apagasse 5 dos 7 arquivos de teste derrubava a cobertura de
+# 95% para 65% com o CI verde. O limiar é o valor medido arredondado para BAIXO: é trava
+# anti-regressão, não aspiração.
+addopts = "-q --strict-markers --cov=esteira --cov-report=term-missing --cov-fail-under=93"

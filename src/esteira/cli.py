@@ -10,9 +10,10 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from esteira import __version__
-from esteira.checks.catalog import CATALOG
+from esteira.checks.catalog import CATALOG, OWASP_EDITION
 from esteira.checks.engine import scan as run_scan
 from esteira.core.models import ScanResult, Severity
 from esteira.report import console as console_report
@@ -35,6 +36,7 @@ class Format(str, Enum):
 
 class FailOn(str, Enum):
     none = "none"
+    info = "info"
     low = "low"
     medium = "medium"
     high = "high"
@@ -66,14 +68,18 @@ def _emit(result: ScanResult, fmt: Format, output: Path | None) -> None:
     payload = to_json(result) if fmt is Format.json else to_sarif(result)
     if output is not None:
         output.write_text(payload + "\n", encoding="utf-8")
-        err.print(f"[green]{fmt.value}[/] salvo em [bold]{output}[/]")
+        err.print(Text.assemble((fmt.value, "green"), " salvo em ", (str(output), "bold")))
     else:
         typer.echo(payload)
 
 
 @app.command()
 def scan(
-    path: Path = typer.Argument(Path("."), help="Repositório, arquivo ou diretório de workflows."),
+    path: Path = typer.Argument(
+        Path("."),
+        exists=True,
+        help="Repositório, arquivo ou diretório de workflows.",
+    ),
     fmt: Format = typer.Option(Format.console, "--format", "-f", help="Formato de saída."),
     output: Path | None = typer.Option(None, "--output", "-o", help="Arquivo de saída."),
     fail_on: FailOn = typer.Option(FailOn.high, "--fail-on", help="Severidade que faz sair com 1."),
@@ -83,20 +89,28 @@ def scan(
     """Audita os workflows do GitHub Actions."""
     unknown = sorted((set(only) | set(skip)) - set(CATALOG))
     if unknown:
-        err.print(f"[red]Checagem(ns) desconhecida(s):[/] {', '.join(unknown)}")
-        err.print(f"[dim]IDs válidos:[/] {', '.join(sorted(CATALOG))}")
+        # Filtro com ID digitado errado não pode virar varredura vazia com exit 0 (verde
+        # falso eterno no CI de quem tem um typo). O erro lista os IDs válidos para ser
+        # acionável sem consultar a documentação.
+        err.print(Text.assemble(("Checagem(ns) desconhecida(s): ", "red"), ", ".join(unknown)))
+        err.print(Text.assemble(("IDs válidos: ", "dim"), ", ".join(sorted(CATALOG))))
         raise typer.Exit(2)
     if fmt is Format.console and output is not None:
         raise typer.BadParameter("só faz sentido com --format json|sarif.", param_hint="--output")
 
     result = run_scan(path, only=only or None, skip=skip or None)
     if result.files_scanned == 0:
+        # Aviso em stderr, NÃO no código de saída: o caminho existe (`exists=True` já barra o
+        # typo com exit 2), então "nenhum workflow aqui" é um fato legítimo — um subprojeto de
+        # monorepo sem CI não pode reprovar o build de quem roda `esteira scan services/api`.
         err.print(
-            f"[red]Nenhum workflow encontrado em[/] [bold]{path}[/]. "
-            "Aponte para um repositório (com .github/workflows/), um diretório de "
-            "workflows, ou um arquivo .yml/.yaml."
+            Text.assemble(
+                ("Nenhum workflow encontrado em ", "yellow"),
+                (str(path), "bold"),
+                " — nada a auditar. Aponte para um repositório (com .github/workflows/), "
+                "um diretório de workflows, ou um arquivo .yml/.yaml.",
+            )
         )
-        raise typer.Exit(2)
 
     _emit(result, fmt, output)
     top = result.max_severity()
@@ -110,7 +124,10 @@ def rules() -> None:
     table.add_column("ID", no_wrap=True)
     table.add_column("Severidade", no_wrap=True)
     table.add_column("Título")
-    table.add_column("OWASP / CWE", no_wrap=True)
+    # A edição do OWASP vai no CABEÇALHO e a célula fica com o código curto: 'A03' significa
+    # coisas opostas em 2021 e 2025, e pôr o rótulo inteiro na célula esmaga a coluna
+    # 'Título' num terminal de 80 colunas (o caso do CI, onde stdout não é TTY).
+    table.add_column(f"OWASP {OWASP_EDITION} / CWE", no_wrap=True)
     for meta in CATALOG.values():
         table.add_row(
             meta.id,

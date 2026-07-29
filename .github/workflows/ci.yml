@@ -8,21 +8,29 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: Lint · Types · Testes
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
       # actions fixadas por SHA — o Esteira dá o exemplo do que ele exige.
+      # persist-credentials: false — o checkout não precisa deixar o token no .git/config
+      # deste job, e é a mitigação que a checagem 'checkout-credentials-in-artifact' pede.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
       - name: Ruff (lint)
         run: ruff check .
@@ -30,23 +38,30 @@ jobs:
         run: ruff format --check .
       - name: Mypy (strict)
         run: mypy src
+      # cobertura e limiar vêm do pyproject.toml: CI e máquina do dev rodam o mesmo comando.
       - name: Pytest
-        run: pytest --cov=esteira --cov-report=term-missing
+        run: pytest
 
   self-scan:
     name: Esteira audita o próprio CI
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       security-events: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - run: pip install .
+      # --fail-on low, não high: com 'high' os achados que a própria ferramenta classifica
+      # como LOW (uma action por tag, por exemplo) ficariam invisíveis, e o portão só vale
+      # se fechar no nível em que o Esteira reclama.
       - name: Auditoria (o próprio pipeline deve passar)
-        run: esteira scan . --fail-on high -f sarif -o esteira.sarif
+        run: esteira scan . --fail-on low -f sarif -o esteira.sarif
       - name: Publica SARIF no Code Scanning
         uses: github/codeql-action/upload-sarif@08d09a53f0f5d694f253bd25732e4429c9e9337f # v3
         if: always()

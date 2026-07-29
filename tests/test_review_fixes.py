@@ -248,10 +248,13 @@ def test_invalid_yaml_emits_finding(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_scan_no_workflows_exits_2(tmp_path: Path) -> None:
-    # Diretório sem workflows não pode reportar "0 achados" com exit 0 (fail-open).
+def test_scan_no_workflows_avisa_mas_nao_reprova(tmp_path: Path) -> None:
+    # Caminho que EXISTE e não tem workflow: é fato legítimo (subprojeto de monorepo sem CI),
+    # não erro de uso — avisa em stderr e sai 0. O caso perigoso de verdade, o caminho
+    # digitado errado, é barrado pelo teste abaixo, com exit 2.
     result = runner.invoke(app, ["scan", str(tmp_path)])
-    assert result.exit_code == 2
+    assert result.exit_code == 0
+    assert "Nenhum workflow encontrado" in result.output
 
 
 def test_scan_nonexistent_path_exits_2(tmp_path: Path) -> None:

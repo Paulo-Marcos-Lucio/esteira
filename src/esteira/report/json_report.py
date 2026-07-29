@@ -1,4 +1,10 @@
-"""Renderizador JSON."""
+"""Renderizador JSON.
+
+Contrato compartilhado da suíte AppSec (`schema: suite-appsec/1`): identificadores e chaves
+em inglês (padrão de mercado), todo texto destinado a humano em PT-BR. `summary.by_severity`
+sai SEMPRE com as cinco chaves, inclusive zeradas — um painel que lê `.by_severity.high` não
+pode quebrar com KeyError porque a varredura veio limpa.
+"""
 
 from __future__ import annotations
 
@@ -6,15 +12,19 @@ import json
 from typing import Any
 
 from esteira import __version__
-from esteira.core.models import Finding, ScanResult
+from esteira.checks.catalog import OWASP_EDITION
+from esteira.core.models import Finding, ScanResult, Severity
+
+SCHEMA = "suite-appsec/1"
 
 
 def finding_to_dict(finding: Finding) -> dict[str, Any]:
     return {
-        "check": finding.check_id,
+        "id": finding.check_id,
         "title": finding.title,
         "severity": finding.severity.value,
-        "path": finding.path.replace("\\", "/"),
+        "severity_rank": finding.severity.rank,
+        "path": finding.path,
         "line": finding.line,
         "detail": finding.detail,
         "evidence": finding.evidence,
@@ -27,12 +37,14 @@ def finding_to_dict(finding: Finding) -> dict[str, Any]:
 
 def to_document(result: ScanResult) -> dict[str, Any]:
     findings = result.sorted()
-    counts: dict[str, int] = {}
+    counts = {severity.value: 0 for severity in Severity}
     for finding in findings:
-        counts[finding.severity.value] = counts.get(finding.severity.value, 0) + 1
+        counts[finding.severity.value] += 1
     return {
+        "schema": SCHEMA,
         "tool": "esteira",
         "version": __version__,
+        "owasp_edition": OWASP_EDITION,
         "summary": {
             "total": len(findings),
             "by_severity": counts,

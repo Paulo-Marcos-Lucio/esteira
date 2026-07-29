@@ -10,6 +10,7 @@ caímos para um melhor-esforço por linha (``_fallback_checks``).
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from esteira.checks.catalog import make_finding
@@ -27,6 +28,9 @@ _UNTRUSTED = (
     "github.event.pull_request.head.label",
     "github.event.pull_request.head.repo.full_name",
     "github.event.pull_request.head.repo.default_branch",
+    # Texto livre, 100% controlado pelo autor do fork (lista oficial do GitHub).
+    "github.event.pull_request.head.repo.description",
+    "github.event.pull_request.head.repo.homepage",
     "github.event.comment.body",
     "github.event.review.body",
     "github.event.review_comment.body",
@@ -45,8 +49,17 @@ _UNTRUSTED = (
 # Subcampos injetáveis de commits[] — só .message/.author/.committer (não .id, que é SHA).
 _UNTRUSTED_RE = (re.compile(r"github\.event\.commits.*?\.(?:message|author|committer)"),)
 
-# Conteúdo de ${{ }}: linear, tolera placeholders {N} e chaves escapadas {{ }} do format().
-_EXPR = re.compile(r"\$\{\{([^{}]*(?:(?:\{[0-9]+\}|\{\{|\}\})[^{}]*)*)\}\}")
+# Conteúdo de ${{ }}. As alternativas são disjuntas pelo 1º caractere (', ", {, }, resto),
+# então a repetição é determinística — não há backtracking a explorar.
+#  - `'…'` / `"…"`: literal de string, onde {{ }} do format() e chaves de JSON são conteúdo;
+#  - `\}(?!\})`: uma chave solta fecha nada — só `}}` termina a expressão. É isto que impede
+#    a expressão de ENGOLIR o `}}` de fechamento e se estender até a última do arquivo
+#    (com a forma antiga, três `${{ … }}` num mesmo `run:` viravam UM match só, e dois
+#    achados de injeção sumiam);
+#  - `$` fora de string encerra a tentativa: um `${{` sem fechamento falha na hora, em vez de
+#    varrer o resto do texto. Sem isso o custo é quadrático — medido: 200 KB de `${{ ` sem
+#    fechamento levavam 130 s; agora, 0,005 s.
+_EXPR = re.compile(r"\$\{\{((?:'[^']*'|\"[^\"]*\"|\{\{|\{[0-9]+\}|\}(?!\})|[^'\"{}$])*)\}\}")
 # Uma expressão ${{ env.X }} inteira (para resolver a indireção por variável de ambiente).
 _ENV_EXPR = re.compile(r"\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}")
 # Acesso por colchete/aspas: normaliza github['event']['x'] → github.event.x antes de casar.
@@ -56,7 +69,14 @@ _SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 # curl|wget baixando e executando no shell: só em POSIÇÃO DE COMANDO (início de linha ou
 # após ; & | ( `), atravessa estágios (base64 -d, gunzip), aceita caminho absoluto e wrappers.
 _LEAD_CMD = r"(?:^|[\n;&|`(])\s*"
-_WRAPPERS = r"(?:(?:sudo|env|command|time|nice|nohup|xargs|timeout|stdbuf)(?:\s+\S+)*?\s+)*"
+# As DUAS repetições são limitadas de propósito. A forma ilimitada
+# `(?:WRAPPER(?:\s+\S+)*?\s+)*` é ambígua — a mesma palavra pode ser consumida pelo `*?`
+# interno OU iniciar uma iteração do `*` externo — e explode em backtracking exponencial:
+# medido, `'sudo env time nice ' * 6` (129 caracteres) levava 7,1 s, contra 0,000016 s aqui.
+# Um `run:` hostil de ~160 caracteres num PR travava o job de auditoria por horas.
+# O limite cobre o uso real (até 3 wrappers encadeados, cada um com até 3 argumentos
+# próprios); quem encadear mais que isso deixa de ser detectado — troca deliberada.
+_WRAPPERS = r"(?:(?:sudo|env|command|time|nice|nohup|xargs|timeout|stdbuf)(?:\s+\S+){0,3}?\s+){0,3}"
 _CURL_PIPE = re.compile(
     _LEAD_CMD + _WRAPPERS + r"(?:curl|wget)\b[^\n]*\|&?\s*"
     r"" + _WRAPPERS + r"(?:/\S*/)?(?:bash|sh|zsh|dash)\b"
@@ -78,6 +98,8 @@ _PR_CHECKOUT_RUN = re.compile(
 _MATRIX_REF = re.compile(r"matrix\.([A-Za-z_][A-Za-z0-9_-]*)")
 # uses:@ref para o modo de fallback (flow-style: o ref não pode capturar } ] ,).
 _USES_LINE = re.compile(r"""uses:\s*['"]?([^'"\s@]+)@([^'"\s}\],]+)""")
+# Prefixo `- run:` de uma linha crua, removido no fallback para o comando voltar à posição 0.
+_RUN_KEY = re.compile(r"^\s*-?\s*run:\s*")
 _FIRST_PARTY = {"actions", "github"}
 # Referência a um segredo dentro de uma expressão: qualquer secrets.X ou o github.token.
 _SECRET_REF = re.compile(r"\bsecrets\.[A-Za-z_]\w*|\bgithub\.token\b", re.IGNORECASE)
@@ -112,6 +134,7 @@ def run_all(wf: Workflow) -> list[Finding]:
     out += check_secret_to_thirdparty(wf)
     out += check_secrets_inherit(wf)
     out += check_unpinned_images(wf)
+    out += check_checkout_credentials(wf)
     return [f for f in out if not _is_suppressed(wf, f)]
 
 
@@ -282,90 +305,143 @@ def _injection_fix(expr: str, hit: str, *, in_js: bool) -> str:
     )
 
 
+def _containing_line(text: str, match: re.Match[str]) -> str:
+    """A linha de ``text`` que contém ``match`` (o comando, não só a expressão)."""
+    start = text.rfind("\n", 0, match.start()) + 1
+    end = text.find("\n", match.end())
+    return text[start : end if end != -1 else len(text)].strip()
+
+
+def _anchor_line(wf: Workflow, command: str, fallback: str, cursor: int) -> int:
+    """Linha do arquivo para um achado dentro de um texto executável.
+
+    Ancora pelo COMANDO inteiro (``echo "${{ … }}"``), não só pela expressão: senão a mesma
+    expressão usada corretamente num bloco ``env:`` anterior "rouba" a localização e o achado
+    aponta para a própria mitigação. Se o comando não existe como linha do arquivo — plain
+    scalar multi-linha, que o YAML dobra numa linha só —, cai para a expressão. O ``cursor``
+    impede que N achados distintos colapsem todos na primeira ocorrência.
+    """
+    at = wf.find_line(command[:60], default=0, start=cursor)
+    if at == 0:
+        at = wf.find_line(fallback, default=cursor, start=cursor)
+    return at
+
+
 def check_script_injection(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
+    cursor = 1
     for step, env_map in _step_contexts(wf.data):
         for sink, text in _exec_texts(step):
             for match in _EXPR.finditer(text):
                 resolved = _resolve_env_refs(match.group(0), env_map)
                 hit = _untrusted_hit(resolved)
-                if hit is not None:
-                    evidence = match.group(0).strip()
-                    out.append(
-                        make_finding(
-                            "script-injection",
-                            wf.path,
-                            wf.find_line(evidence),
-                            f"Contexto não-confiável interpolado: {hit}.",
-                            evidence=evidence,
-                            fix_suggestion=_injection_fix(
-                                evidence, hit, in_js=sink == "github-script"
-                            ),
-                        )
+                if hit is None:
+                    continue
+                evidence = match.group(0).strip()
+                at = _anchor_line(wf, _containing_line(text, match), evidence, cursor)
+                cursor = at + 1
+                out.append(
+                    make_finding(
+                        "script-injection",
+                        wf.path,
+                        at,
+                        f"Contexto não-confiável interpolado: {hit}.",
+                        evidence=evidence,
+                        fix_suggestion=_injection_fix(evidence, hit, in_js=sink == "github-script"),
                     )
+                )
     return out
+
+
+def _exec_lines(wf: Workflow) -> Iterator[tuple[str, str]]:
+    """(sink, linha) de cada linha executável do workflow, na ordem do arquivo.
+
+    Fronteira única de "onde há execução": reusa ``_exec_texts`` (``run:`` e o ``script:``
+    do ``actions/github-script``), de modo que uma checagem nova não precise reimplementar
+    a navegação por steps — e um sink novo passe a valer para todas de uma vez.
+    """
+    for step, _env in _step_contexts(wf.data):
+        for sink, text in _exec_texts(step):
+            for line in text.splitlines():
+                yield sink, line
 
 
 def check_secret_in_run(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
-    for step, _env in _step_contexts(wf.data):
-        run = step.get("run")
-        if not isinstance(run, str):
+    cursor = 1
+    for sink, line in _exec_lines(wf):
+        if not _secret_echo_leak(line, sink):
             continue
-        for line in run.splitlines():
-            if _secret_echo_leak(line):
-                out.append(
-                    make_finding(
-                        "secret-in-run",
-                        wf.path,
-                        wf.find_line(line.strip()[:60]) if line.strip() else 1,
-                        "Um segredo é impresso em um comando (echo/printf).",
-                        evidence=line.strip()[:120],
-                    )
-                )
+        stripped = line.strip()
+        at = wf.find_line(stripped[:60], start=cursor) if stripped else cursor
+        cursor = at + 1  # âncora: N vazamentos idênticos ⇒ N linhas distintas
+        out.append(
+            make_finding(
+                "secret-in-run",
+                wf.path,
+                at,
+                "Um segredo é impresso num comando que escreve no log do job.",
+                evidence=stripped[:120],
+            )
+        )
     return out
 
 
-# Redirecionamento de saída para ARQUIVO/fd nomeado (`> path`, `>> "$GITHUB_ENV"`),
-# distinto de duplicação de descritor (`2>&1`, `>&2`): o `[^\s&]` após o operador exige
-# um alvo real (nome de arquivo), não um `&`. Usado para não confundir a gravação segura
-# de um segredo em arquivo com o vazamento dele para o log.
-_REDIRECT_TO_FILE = re.compile(r">>?\s*[^\s&]")
+# Redirecionamento de saída para ARQUIVO (`> path`, `>> "$GITHUB_ENV"`), distinto de
+# duplicação de descritor (`2>&1`, `>&2`) e de redirecionamento de stderr (`2>/dev/null`,
+# que NÃO impede o segredo de sair no stdout):
+#  - `(?<![0-9&])` rejeita `2>`/`1>`/`>&`, ou seja, exige redirecionar o stdout;
+#  - `[^\s&|;]` exige um alvo de arquivo real logo depois.
+_REDIRECT_TO_FILE = re.compile(r"(?<![0-9&])>>?\s*[^\s&|;]")
+# String literal do shell — apagada antes de procurar o redirecionamento, senão um `>`
+# DENTRO do texto ecoado (`echo "==> publicando ${{ secrets.X }}"`) se disfarça de gravação
+# em arquivo e engole o achado.
+_QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
+# Comandos que imprimem no log do job, por sink. No `run:` é o shell; no `github-script`
+# a saída de console/@actions/core também vai para o log da Action.
+_PRINT_COMMANDS: dict[str, tuple[str, ...]] = {
+    "run": ("echo", "printf"),
+    "github-script": ("console.log", "console.error", "console.warn", "core.info", "core.warning"),
+}
 
 
-def _secret_echo_leak(line: str) -> bool:
+def _secret_echo_leak(line: str, sink: str = "run") -> bool:
     lowered = line.lower()
-    if "echo" not in lowered and "printf" not in lowered:
+    if not any(cmd in lowered for cmd in _PRINT_COMMANDS.get(sink, ())):
         return False
     if not any("secrets." in m.group(1) for m in _EXPR.finditer(line)):
         return False
+    if sink != "run":
+        return True  # no JS não há redirecionamento de shell: o valor vai para o log
     # Casos em que o segredo NÃO chega ao log da Action:
     #  - vai para o stdin do próximo comando (`--password-stdin` / `--with-token`);
-    #  - é redirecionado para um ARQUIVO/fd (`printf '%s' "${{secrets.KEY}}" > id_deploy`,
+    #  - o STDOUT é redirecionado para um ARQUIVO (`printf '%s' "${{secrets.KEY}}" > id_deploy`,
     #    `echo "${{secrets.X}}" >> "$GITHUB_ENV"`) — padrão canônico e seguro de instalar/
     #    exportar um segredo. O que vaza é o `echo`/`printf` SEM redirecionamento (stdout → log).
     if "--password-stdin" in lowered or "--with-token" in lowered:
         return False
-    return not _REDIRECT_TO_FILE.search(line)
+    return not _REDIRECT_TO_FILE.search(_QUOTED.sub("''", line))
 
 
 def check_curl_pipe(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
-    for step, _env in _step_contexts(wf.data):
-        run = step.get("run")
-        if not isinstance(run, str):
+    cursor = 1
+    for sink, line in _exec_lines(wf):
+        # Só o sink de shell: `curl | bash` não existe dentro do JS do github-script.
+        if sink != "run" or not _CURL_PIPE.search(line):
             continue
-        for line in run.splitlines():
-            if _CURL_PIPE.search(line):
-                out.append(
-                    make_finding(
-                        "curl-pipe-shell",
-                        wf.path,
-                        wf.find_line(line.strip()[:60]) if line.strip() else 1,
-                        "Download da rede executado direto no shell.",
-                        evidence=line.strip()[:120],
-                    )
-                )
+        stripped = line.strip()
+        at = wf.find_line(stripped[:60], start=cursor) if stripped else cursor
+        cursor = at + 1
+        out.append(
+            make_finding(
+                "curl-pipe-shell",
+                wf.path,
+                at,
+                "Download da rede executado direto no shell.",
+                evidence=stripped[:120],
+            )
+        )
     return out
 
 
@@ -552,6 +628,65 @@ def check_unpinned_images(wf: Workflow) -> list[Finding]:
     return out
 
 
+# Valores de `upload-artifact.path` que publicam a raiz do workspace — e portanto o `.git`
+# com a credencial que o checkout deixou lá.
+_WORKSPACE_PATHS = frozenset(
+    {".", "./", "${{ github.workspace }}", "${{github.workspace}}", "$GITHUB_WORKSPACE"}
+)
+
+
+def _publishes_workspace(with_: dict[str, Any]) -> bool:
+    path = with_.get("path")
+    if path is None:
+        return True  # sem 'path' explícito, o padrão histórico é o diretório de trabalho
+    entries = [line.strip() for line in str(path).splitlines() if line.strip()]
+    return any(entry in _WORKSPACE_PATHS for entry in entries)
+
+
+def check_checkout_credentials(wf: Workflow) -> list[Finding]:
+    """Credencial deixada pelo checkout em `.git/config` e publicada via upload-artifact.
+
+    Classe 'artipacked': `actions/checkout` grava o token em `.git/config`
+    (`persist-credentials` é true por padrão); se um step POSTERIOR do mesmo job publica a
+    raiz do workspace, o `.git` — e o token — vão dentro do artefato. Exige os dois lados
+    (checkout sem a mitigação **e** upload abrangente depois dele) de propósito: sozinho, o
+    checkout padrão é o de 99% dos workflows e alarmar nele seria só ruído.
+    """
+    out: list[Finding] = []
+    cursor = 1
+    for job in _jobs(wf.data):
+        exposed_at: int | None = None
+        for step in _steps_of(job):
+            uses = step.get("uses")
+            if not isinstance(uses, str):
+                continue
+            with_raw = step.get("with")
+            with_: dict[str, Any] = with_raw if isinstance(with_raw, dict) else {}
+            if uses.startswith("actions/checkout"):
+                if with_.get("persist-credentials") is not False:
+                    exposed_at = wf.find_line(uses, start=cursor)
+                    cursor = exposed_at + 1
+            elif (
+                uses.startswith("actions/upload-artifact")
+                and exposed_at is not None
+                and _publishes_workspace(with_)
+            ):
+                out.append(
+                    make_finding(
+                        "checkout-credentials-in-artifact",
+                        wf.path,
+                        exposed_at,
+                        "checkout sem 'persist-credentials: false' e, depois dele, um "
+                        f"'{uses}' que publica a raiz do workspace (path="
+                        f"{with_.get('path', '<ausente>')!r}): o .git/config com a credencial "
+                        "vai dentro do artefato.",
+                        evidence=uses,
+                    )
+                )
+                exposed_at = None  # um achado por par checkout → upload
+    return out
+
+
 def _job_images(job: dict[str, Any]) -> list[str]:
     images: list[str] = []
     container = job.get("container")
@@ -662,10 +797,15 @@ def check_permissions(wf: Workflow) -> list[Finding]:
     jobs: dict[str, Any] = jobs_raw if isinstance(jobs_raw, dict) else {}
     multi_job = len(jobs) > 1
 
-    out += _broad_permissions(wf, data.get("permissions"), "workflow", multi_job)
+    cursor = 1
+    found, cursor = _broad_permissions(wf, data.get("permissions"), "workflow", multi_job, cursor)
+    out += found
     for name, job in jobs.items():
         if isinstance(job, dict) and "permissions" in job:
-            out += _broad_permissions(wf, job.get("permissions"), f"job '{name}'", multi_job=True)
+            found, cursor = _broad_permissions(
+                wf, job.get("permissions"), f"job '{name}'", True, cursor
+            )
+            out += found
 
     # missing-permissions: só em workflows (não em arquivos de action, que têm 'runs' e não
     # têm 'permissions'), quando não há bloco no workflow E algum job herda o padrão.
@@ -692,60 +832,76 @@ def check_permissions(wf: Workflow) -> list[Finding]:
     return out
 
 
-def _broad_permissions(wf: Workflow, perms: Any, scope: str, multi_job: bool) -> list[Finding]:
+def _broad_permissions(
+    wf: Workflow, perms: Any, scope: str, multi_job: bool, cursor: int = 1
+) -> tuple[list[Finding], int]:
+    """Achados de permissão ampla + o cursor avançado.
+
+    O cursor é o que faz cada bloco `permissions:` apontar para a SUA linha. Sem ele, os
+    blocos de nível de job colavam todos na primeira linha do arquivo com `write-all` — e,
+    como a supressão inline é decidida pela linha do achado, um único `# esteira: ignore`
+    no bloco do workflow apagava também os achados dos jobs, que ninguém suprimiu.
+    """
     if perms == "write-all":
+        at = wf.find_line("write-all", start=cursor)
         return [
             make_finding(
                 "broad-permissions",
                 wf.path,
-                wf.find_line("write-all"),
+                at,
                 f"permissions: write-all ({scope}).",
                 evidence="write-all",
             )
-        ]
+        ], at + 1
     # Escopos de escrita específicos só são 'amplos' no nível do workflow com vários jobs
     # (todos herdam). Um write por-job (ou de workflow com um só job) é o mínimo recomendado.
     if isinstance(perms, dict) and scope == "workflow" and multi_job:
         writes = sorted((str(k) for k, v in perms.items() if v == "write"), key=str)
         if writes:
+            at = wf.find_line("permissions", start=cursor)
             return [
                 make_finding(
                     "broad-permissions",
                     wf.path,
-                    wf.find_line("permissions"),
+                    at,
                     f"Escopos de escrita herdados por todos os jobs: {writes}.",
                     evidence=", ".join(writes),
                     severity=Severity.MEDIUM,
                 )
-            ]
-    return []
+            ], at + 1
+    return [], cursor
 
 
 def check_self_hosted(wf: Workflow) -> list[Finding]:
-    if wf.data is None:
-        return _self_hosted_lines(wf)
+    # Só é chamada com o YAML parseado: quando ``wf.data is None``, ``run_all`` já retornou
+    # pelo caminho de fallback (que chama ``_self_hosted_lines`` diretamente).
     out: list[Finding] = []
+    cursor = 1
     for job in _jobs(wf.data):
         labels = _runs_on_labels_resolved(job)
         runs_on = job.get("runs-on")
         by_label = any("self-hosted" in str(label).lower() for label in labels)
         if by_label:
+            at = wf.find_line("self-hosted", start=cursor)
+            cursor = at + 1
             out.append(
                 make_finding(
                     "self-hosted-runner",
                     wf.path,
-                    wf.find_line("self-hosted"),
+                    at,
                     "Job roda em runner self-hosted.",
                     evidence="self-hosted",
                 )
             )
         elif isinstance(runs_on, dict) and "group" in runs_on:
             group = str(runs_on["group"])
+            at = wf.find_line("group", start=cursor)
+            cursor = at + 1
             out.append(
                 make_finding(
                     "self-hosted-runner",
                     wf.path,
-                    wf.find_line("group"),
+                    at,
                     f"Job usa runner group '{group}' (grupos organizam runners self-hosted).",
                     evidence=f"group: {group}",
                 )
@@ -843,7 +999,10 @@ def _fallback_checks(wf: Workflow) -> list[Finding]:
                     evidence=line.strip()[:120],
                 )
             )
-        if _CURL_PIPE.search(line):
+        # `_CURL_PIPE` exige POSIÇÃO DE COMANDO. No caminho estrutural o valor do `run:` já
+        # chega isolado; aqui a linha é crua, e o prefixo `- run: ` empurraria o `curl` para
+        # fora dessa posição — falso-negativo só por estarmos no fallback.
+        if _CURL_PIPE.search(_RUN_KEY.sub("", line)):
             out.append(
                 make_finding(
                     "curl-pipe-shell",

@@ -1,10 +1,20 @@
-"""Catálogo declarativo das checagens do Esteira."""
+"""Catálogo declarativo das checagens do Esteira.
+
+Os rótulos OWASP são da edição **2025** (publicada em 06/11/2025) em toda a suíte. A edição
+importa: `A03` é *Software Supply Chain Failures* em 2025 e era *Injection* em 2021, e
+`Injection` virou `A05`. Consolidar achados de ferramentas em edições diferentes soma coisas
+distintas sob o mesmo código, por isso o ano é declarado — no cabeçalho da coluna na tela,
+e no campo `owasp_edition` do JSON/SARIF, para quem consome por máquina.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from esteira.core.models import Finding, Severity
+
+# Edição do OWASP Top 10 usada nos rótulos deste catálogo.
+OWASP_EDITION = "2025"
 
 
 @dataclass(frozen=True)
@@ -26,7 +36,7 @@ CATALOG: dict[str, CheckMeta] = {
             Severity.CRITICAL,
             "Nunca interpole ${{ github.event.* }} / github.head_ref direto no shell. "
             'Passe por uma variável de ambiente e use "$VAR" com aspas.',
-            "A03:2021 Injection",
+            "A05:2025 Injection",
             "CWE-94",
         ),
         CheckMeta(
@@ -35,7 +45,7 @@ CATALOG: dict[str, CheckMeta] = {
             Severity.CRITICAL,
             "pull_request_target roda com segredos e token de escrita. Não faça checkout do "
             "código do PR (head) nesse contexto — é execução de código não-confiável com privilégio.",
-            "A08:2021 Software and Data Integrity Failures",
+            "A08:2025 Software or Data Integrity Failures",
             "CWE-94",
         ),
         CheckMeta(
@@ -43,8 +53,10 @@ CATALOG: dict[str, CheckMeta] = {
             "Action de terceiros não fixada por SHA",
             Severity.HIGH,
             "Fixe actions de terceiros por SHA de commit completo (40 hex), não por tag/branch — "
-            "tags podem ser movidas para código malicioso.",
-            "A08:2021 Software and Data Integrity Failures",
+            "tags podem ser movidas para código malicioso. E mantenha os SHAs sob "
+            "Dependabot/Renovate: pinar sem atualizar congela a versão vulnerável, o que é pior "
+            "que a tag (que ao menos recebe a correção do mantenedor).",
+            "A03:2025 Software Supply Chain Failures",
             "CWE-1357",
         ),
         CheckMeta(
@@ -52,7 +64,7 @@ CATALOG: dict[str, CheckMeta] = {
             "Permissões amplas do GITHUB_TOKEN",
             Severity.HIGH,
             "Evite 'write-all' / 'contents: write' global. Declare o mínimo necessário por job.",
-            "A01:2021 Broken Access Control",
+            "A01:2025 Broken Access Control",
             "CWE-732",
         ),
         CheckMeta(
@@ -60,7 +72,7 @@ CATALOG: dict[str, CheckMeta] = {
             "Segredo exposto em comando 'run'",
             Severity.HIGH,
             "Não faça echo/print de ${{ secrets.* }}. Segredos vazam em logs mesmo com masking parcial.",
-            "A09:2021 Security Logging and Monitoring Failures",
+            "A09:2025 Security Logging and Alerting Failures",
             "CWE-532",
         ),
         CheckMeta(
@@ -69,7 +81,7 @@ CATALOG: dict[str, CheckMeta] = {
             Severity.MEDIUM,
             "Baixe o script, verifique o hash/assinatura e só então execute — 'curl | bash' roda "
             "código arbitrário da rede sem verificação.",
-            "A08:2021 Software and Data Integrity Failures",
+            "A03:2025 Software Supply Chain Failures",
             "CWE-494",
         ),
         CheckMeta(
@@ -78,7 +90,7 @@ CATALOG: dict[str, CheckMeta] = {
             Severity.MEDIUM,
             "Em repositório público, PRs de fork podem executar em runners self-hosted persistentes. "
             "Use runners efêmeros e isole a rede.",
-            "A08:2021 Software and Data Integrity Failures",
+            "A08:2025 Software or Data Integrity Failures",
             "CWE-668",
         ),
         CheckMeta(
@@ -88,7 +100,7 @@ CATALOG: dict[str, CheckMeta] = {
             "Informativo: esses gatilhos rodam no contexto do repositório-base, com segredos e token "
             "de escrita. Seguro se NÃO fizerem checkout/execução de código do PR — o risco real "
             "(checkout do PR) é reportado à parte como 'pull-request-target-checkout'.",
-            "A08:2021 Software and Data Integrity Failures",
+            "A08:2025 Software or Data Integrity Failures",
             "CWE-269",
         ),
         CheckMeta(
@@ -97,7 +109,7 @@ CATALOG: dict[str, CheckMeta] = {
             Severity.LOW,
             "Mesmo em actions oficiais (actions/*, github/*), prefira fixar por SHA para builds "
             "reprodutíveis e imunes a mudança de tag.",
-            "A08:2021 Software and Data Integrity Failures",
+            "A03:2025 Software Supply Chain Failures",
             "CWE-1357",
         ),
         CheckMeta(
@@ -107,7 +119,7 @@ CATALOG: dict[str, CheckMeta] = {
             "Reusable workflow (`org/repo/.github/workflows/x.yml@ref`) fixado por branch/tag. "
             "Fixar por SHA endurece o supply-chain, MAS confira o contexto: dentro da mesma org o "
             "risco é menor, e algumas infra-CI exigem `@main` (o próprio arquivo pode documentar).",
-            "A08:2021 Software and Data Integrity Failures",
+            "A03:2025 Software Supply Chain Failures",
             "CWE-1357",
         ),
         CheckMeta(
@@ -116,7 +128,7 @@ CATALOG: dict[str, CheckMeta] = {
             Severity.LOW,
             "Declare 'permissions:' explicitamente (idealmente 'contents: read') para não depender "
             "do padrão da organização.",
-            "A01:2021 Broken Access Control",
+            "A01:2025 Broken Access Control",
             "CWE-732",
         ),
         CheckMeta(
@@ -126,7 +138,7 @@ CATALOG: dict[str, CheckMeta] = {
             "'secrets: inherit' entrega todos os segredos do repositório ao workflow chamado. "
             "Passe apenas o necessário explicitamente (secrets:\\n  FOO: ${{ secrets.FOO }}), "
             "sobretudo se o reusable não for fixado por SHA ou for de outra organização.",
-            "A08:2021 Software and Data Integrity Failures",
+            "A03:2025 Software Supply Chain Failures",
             "CWE-522",
         ),
         CheckMeta(
@@ -137,7 +149,7 @@ CATALOG: dict[str, CheckMeta] = {
             "terceiros fixada por tag/branch — se a tag for movida para código malicioso, ele "
             "recebe o segredo (inclusive o GITHUB_TOKEN de escrita). Fixe a action por SHA de "
             "commit completo (40 hex) e passe apenas o token de menor escopo necessário.",
-            "A08:2021 Software and Data Integrity Failures",
+            "A03:2025 Software Supply Chain Failures",
             "CWE-522",
         ),
         CheckMeta(
@@ -147,8 +159,20 @@ CATALOG: dict[str, CheckMeta] = {
             "Imagens em container:/services:/docker:// fixadas por tag podem ser republicadas "
             "com conteúdo diferente. Fixe por digest (imagem@sha256:...) para builds "
             "reprodutíveis e imunes a supply-chain.",
-            "A08:2021 Software and Data Integrity Failures",
+            "A03:2025 Software Supply Chain Failures",
             "CWE-1357",
+        ),
+        CheckMeta(
+            "checkout-credentials-in-artifact",
+            "Credencial do checkout publicada junto com o workspace",
+            Severity.HIGH,
+            "actions/checkout grava a credencial em .git/config — 'persist-credentials' é true "
+            "por padrão. Se um step seguinte publica o workspace inteiro (upload-artifact com "
+            "path '.' ou sem path), o .git vai junto e o token fica baixável por quem tiver "
+            "acesso ao artefato. Use 'persist-credentials: false' no checkout quando o job não "
+            "precisa empurrar commits, ou restrinja o 'path' do upload ao diretório de build.",
+            "A02:2025 Security Misconfiguration",
+            "CWE-522",
         ),
         CheckMeta(
             "invalid-yaml",

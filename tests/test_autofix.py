@@ -95,7 +95,7 @@ def test_github_script_injection_suggests_process_env_not_shell(tmp_path: Path) 
 
 def test_suggestion_surfaces_in_json_report(tmp_path: Path) -> None:
     doc = json.loads(to_json(_scan_text(tmp_path, _RUN_INJECTION)))
-    inj = [f for f in doc["findings"] if f["check"] == "script-injection"]
+    inj = [f for f in doc["findings"] if f["id"] == "script-injection"]
     assert inj and inj[0]["fix_suggestion"] is not None
     assert "env:" in inj[0]["fix_suggestion"]
 

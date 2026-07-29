@@ -11,6 +11,10 @@ import yaml
 from esteira.core.models import Workflow
 
 _YAML_EXTS = {".yml", ".yaml"}
+# Metadados de action (composite/docker/node). Nome reservado pelo GitHub, então não há
+# ambiguidade com YAML comum. É onde a injeção se esconde melhor: a action é chamada por
+# N workflows e ninguém revisa o action.yml.
+_ACTION_FILES = frozenset({"action.yml", "action.yaml"})
 
 # Diretórios em que nunca há workflows do *repositório* — só cópias de dependências
 # (vendoradas) ou artefatos de VCS/cache. Descer neles geraria falso-positivo (auditaríamos
@@ -20,12 +24,12 @@ _PRUNE_DIRS = frozenset({"node_modules", "venv", "__pycache__", "site-packages",
 
 
 def iter_workflow_files(root: Path | str) -> list[Path]:
-    """Descobre os arquivos de workflow a partir de ``root``.
+    """Descobre os arquivos auditáveis a partir de ``root``.
 
-    Aceita: um arquivo YAML direto, um repositório (procura em ``.github/workflows/``)
-    ou um diretório de workflows apontado diretamente. Em um **monorepo**, encontra
-    todo ``.github/workflows/`` sob ``root`` — o do repositório e o de cada subprojeto —
-    e não apenas o do nível superior.
+    Aceita: um arquivo YAML direto, um repositório (procura em ``.github/workflows/`` e
+    nos ``action.yml``/``action.yaml`` de composite actions) ou um diretório de workflows
+    apontado diretamente. Em um **monorepo**, encontra todo ``.github/workflows/`` sob
+    ``root`` — o do repositório e o de cada subprojeto — e não apenas o do nível superior.
     """
     root = Path(root)
     if root.is_file():
@@ -33,22 +37,23 @@ def iter_workflow_files(root: Path | str) -> list[Path]:
     if not root.is_dir():
         return []
 
-    workflow_dirs = _find_workflow_dirs(root)
-    if workflow_dirs:
-        files = {p for directory in workflow_dirs for p in _yaml_in(directory)}
+    workflow_dirs, action_files = _discover(root)
+    files = {p for directory in workflow_dirs for p in _yaml_in(directory)} | set(action_files)
+    if files:
         return sorted(files)
     # o usuário pode ter apontado direto para o diretório de workflows
     return _yaml_in(root)
 
 
-def _find_workflow_dirs(root: Path) -> list[Path]:
-    """Todos os ``.github/workflows/`` sob ``root`` (suporte a monorepo).
+def _discover(root: Path) -> tuple[list[Path], list[Path]]:
+    """(diretórios ``.github/workflows/``, arquivos de action) sob ``root``.
 
-    Poda diretórios de dependência vendorada e caches/VCS ocultos para não confundir o
-    CI de uma dependência com o do repositório auditado.
+    Uma única travessia. Poda diretórios de dependência vendorada e caches/VCS ocultos
+    para não confundir o CI (ou a action) de uma dependência com o do repositório auditado.
     """
-    found: list[Path] = []
-    for dirpath, dirnames, _files in os.walk(root):
+    workflow_dirs: list[Path] = []
+    action_files: list[Path] = []
+    for dirpath, dirnames, files in os.walk(root):
         # Poda in-place: os.walk não desce nos nomes removidos de ``dirnames``.
         dirnames[:] = [
             name
@@ -57,8 +62,9 @@ def _find_workflow_dirs(root: Path) -> list[Path]:
         ]
         current = Path(dirpath)
         if current.name == "workflows" and current.parent.name == ".github":
-            found.append(current)
-    return found
+            workflow_dirs.append(current)
+        action_files += [current / name for name in files if name in _ACTION_FILES]
+    return workflow_dirs, action_files
 
 
 def _yaml_in(directory: Path) -> list[Path]:
