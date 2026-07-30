@@ -178,6 +178,25 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ---
 
+## 🔬 Qualidade de engenharia & método
+
+**Portões, medidos agora neste repo:** 190 testes verdes · cobertura **95%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (14 arquivos) · `ruff` lint + format limpos (27 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+
+**Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
+
+**Arquitetura — só o que está no código:**
+
+- **Separação de responsabilidades:** `core/` (modelos + loader YAML) × `checks/` (catálogo, detectores, motor) × `report/` (console, json, sarif) × `cli.py`.
+- **Fonte única de verdade:** severidade + rótulo OWASP/CWE + recomendação vivem só em `checks/catalog.py` (um `CheckMeta` por checagem); os três renderizadores leem dele, sem duplicar rótulo.
+- **Contrato de saída versionado:** JSON com `schema: suite-appsec/1` e SARIF **2.1.0** (`$schema` do schemastore, catálogo completo como `rules`) para a aba Security.
+- **Tipos estritos e imutabilidade:** `mypy --strict`, `from __future__ import annotations` em todo módulo, e os modelos de domínio (`Finding`, `CheckMeta`) são `@dataclass(frozen=True)`.
+
+**Cadeia de suprimentos do próprio repo:** as três actions do CI são fixadas por **SHA de 40 hex** (não por tag), com `dependabot.yml` atualizando actions e pip mensalmente — pinar sem atualizar congela a versão vulnerável. O checkout usa `persist-credentials: false`, o job declara `permissions: contents: read`, e um job `self-scan` faz o Esteira auditar o próprio pipeline (`--fail-on low`): o CI pratica o que a ferramenta cobra.
+
+**PT-BR em código, teste e doc** é decisão consciente de consistência: nome de teste, mensagem de achado e recomendação falam a língua de quem vai ler o relatório.
+
+---
+
 ## ⚖️ Uso ético
 
 Ferramenta **defensiva**, para auditar pipelines que você mantém ou tem autorização para revisar. Os achados são apontados com a correção — o objetivo é endurecer, não explorar.
