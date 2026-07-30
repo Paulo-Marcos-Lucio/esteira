@@ -147,13 +147,17 @@ cabeçalho ausente — um scanner de segredo deve ter o gatilho mais sensível.
 
 ## 🔓 Versão Pro (privada) — hardening conduzido da sua cadeia de CI/CD
 
-**A engine é a mesma deste repositório.** A diferença da versão Pro **não é código** — é **serviço**. Não existe "motor mais forte" escondido nem catálogo secreto: o que audita seus workflows na Pro é exatamente o que está neste repo, com o mesmo catálogo de 16 checagens. O que muda é o trabalho humano em cima dele:
+**A engine é a mesma deste repositório** — o mesmo catálogo de 16 checagens que trava o CI aqui, com os mesmos números de campo (16 de 16 disparando na severidade fixada, zero falso-positivo no workflow endurecido). A versão Pro **não é um motor secreto**: é **serviço** — o trabalho humano em cima da engine que você já pode rodar.
 
-- ⚙️ **Auditoria de toda a organização / monorepo**, não de um arquivo — a descoberta já é recursiva (todo `.github/workflows/` e `action.yml` sob o caminho, com poda de dependência vendorada); o serviço roda isso em escala e **adjudica cada achado** (descarta o falso-positivo, confirma o real).
-- 🔧 **Correção aplicada via Pull Request**, não só apontada: SHA-pinning das actions, permissões mínimas por job, isolamento de `pull_request_target` (sem checkout do código do PR) e remoção de segredo do log — o *diff* que fecha a porta, pronto para revisar e mergear.
-- 📄 **Evidência de cadeia de suprimentos** (OWASP **A03:2025 — Software Supply Chain Failures**): relatório SARIF/JSON versionado do antes e do depois, para auditoria e conformidade.
+| Dimensão | Ferramenta pública (você roda) | Pro · serviço (eu conduzo com você) |
+| --- | --- | --- |
+| **Engine** | mesma engine, mesmo catálogo de 16 checagens, mesma saída | **a mesma engine** — não há motor escondido; o que muda é o trabalho em cima dela |
+| **Escopo** | um repositório / um caminho por vez | **organização inteira / monorepo**, com cada achado adjudicado (descarto o falso-positivo, confirmo o real) |
+| **Achado** | apontado com linha, severidade e correção | **correção aplicada via Pull Request**: SHA-pin das actions, permissões mínimas por job, isolamento de `pull_request_target`, segredo fora do log — o *diff* pronto para revisar e mergear |
+| **Evidência** | relatório console / JSON / SARIF que você gera | SARIF/JSON versionado **antes × depois** (OWASP **A03:2025 — Software Supply Chain Failures**), para auditoria e conformidade |
+| **Continuidade** | você reroda quando quiser | **reteste após o merge** + mentoria do time para o hardening não regredir no próximo workflow |
 
-> **Seu deploy roda com um token de escrita e segredos?** Um erro ali entrega o reino. O serviço é fechar essa porta — com o *diff* na mão — antes que alguém entre.
+> Serviço prestado sobre pipelines que você mantém ou tem autorização para revisar (veja *Uso ético*). Seu deploy roda com token de escrita e segredos — um erro ali entrega o reino; o serviço é fechar essa porta, com o *diff* na mão, antes que alguém entre.
 
 <div align="center">
 
@@ -165,6 +169,23 @@ cabeçalho ausente — um scanner de segredo deve ter o gatilho mais sensível.
 ---
 
 ## 🏗️ Arquitetura
+
+O Esteira lê os arquivos de workflow do seu repositório (`.github/workflows/*.yml` e os `action.yml` de composite actions), procura os padrões que transformam o CI em porta de entrada e devolve cada achado com número de linha, severidade e correção. O caminho do dado é curto e linear: o **loader** descobre e parseia os workflows; o **motor** roda os detectores — por linha e estruturais — arquivo a arquivo; cada padrão vira um **Finding** que o **catálogo** carimba com severidade e rótulo OWASP/CWE; e os **renderizadores** entregam o resultado em console, JSON ou SARIF. Se um arquivo não parseia, ele não é ignorado em silêncio — vira um achado `invalid-yaml` (fail-closed). Em 20 segundos: entra YAML de pipeline, sai um relatório acionável do que fechar e por quê.
+
+```mermaid
+flowchart LR
+    IN["Entrada: .github/workflows/*.yml + action.yml"] --> CLI["cli.py · esteira scan"]
+    subgraph MOTOR["checks/engine · motor (arquivo a arquivo, fail-closed)"]
+        LOAD["core/loader · descoberta recursiva + parse YAML"] --> DET["checks/detectors · por linha + estruturais"]
+    end
+    CLI --> LOAD
+    DET -->|make_finding| FND["core/models · Finding + ScanResult"]
+    CAT["checks/catalog · CheckMeta (16 checagens)"] -.->|"severidade · OWASP 2025 · CWE"| FND
+    FND --> REP["report/ · renderizadores"]
+    REP --> CON["console (rich)"]
+    REP --> JSN["JSON (schema suite-appsec/1)"]
+    REP --> SAR["SARIF 2.1.0 (aba Security)"]
+```
 
 ```
 src/esteira/
