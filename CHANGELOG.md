@@ -102,6 +102,15 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
   `dangerous-trigger` errada), com tabela de códigos de saída e dos defaults de `--fail-on` da suíte.
   Os defaults **não** são uniformes de propósito — o Guardião usa `medium` porque um scanner de
   segredo deve ter gatilho mais sensível que um de cabeçalho.
+- **README — seção Pro corrigida (overclaim removido).** O texto prometia um "catálogo estendido" na
+  versão Pro que **não existe**: a engine da Pro é a **mesma** deste repositório, com as mesmas 16
+  checagens. A seção passa a dizer com todas as letras que a diferença é **serviço** (auditoria da
+  organização/monorepo, adjudicação de achados e **correção aplicada via PR** — SHA-pinning,
+  permissões mínimas, isolamento de `pull_request_target`), não código. Corrigido também o rótulo da
+  evidência de cadeia de suprimentos: **A03:2025** (era citado como A08). Adicionada a seção
+  "O que foi medido" com os números reproduzíveis pela suíte (16/16 na severidade certa, zero
+  falso-positivo no workflow que pina por SHA, ReDoS do `curl | bash` de 7,1 s → < 0,01 s com teste
+  cronometrado).
 - **Instalação: `pip install esteira` foi removido de toda a documentação.** Medido no PyPI: o nome
   `esteira` é de **outra pessoa** (um servidor de automação, release única de 2021) e aquele pacote
   nem instala o comando `esteira` — a receita do README puxava código de terceiro para dentro do CI

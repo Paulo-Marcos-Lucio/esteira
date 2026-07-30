@@ -62,6 +62,16 @@ esta tabela divergir do catálogo, inclusive na severidade).
 
 ---
 
+## 🔬 O que foi medido
+
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (190 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+
+- **16 de 16 checagens** disparam na severidade **fixada em teste** contra casos sintéticos, com **zero divergência de severidade**. O meta-teste de catálogo é implacável: checagem nova nasce vermelha até ter caso positivo, severidade declarada, rótulo OWASP da edição e linha nesta tabela — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão do CI) faz a suíte falhar.
+- **Zero falso-positivo** no workflow endurecido que **fixa as actions por SHA** e declara `permissions: contents: read`: ele sai com **nenhum achado**. Pinar por SHA e declarar o mínimo é exatamente o que a ferramenta cobra — quem já faz não recebe ruído.
+- **ReDoS eliminado no próprio portão.** O padrão de `curl | bash` tinha backtracking exponencial: uma linha `run:` de 129 caracteres travava a varredura por **7,1 s**, e cada ~19 caracteres a mais multiplicavam o tempo por ~14 (≈90 s numa linha de ~150 caracteres, rumo ao *timeout* do job — a ferramenta virava o DoS do pipeline que ela audita). Hoje a mesma entrada leva **< 0,01 s** (medido: ~0,00002 s), com um **teste que cronometra** e reprova a regressão.
+
+---
+
 ## 🚀 Instalação
 
 ```bash
@@ -135,15 +145,15 @@ cabeçalho ausente — um scanner de segredo deve ter o gatilho mais sensível.
 
 ---
 
-## 🔓 Versão Pro (privada) — hardening da sua cadeia de CI/CD
+## 🔓 Versão Pro (privada) — hardening conduzido da sua cadeia de CI/CD
 
-Este repo mostra o auditor. A **versão Pro é privada**: a **auditoria completa da sua esteira** (GitHub Actions e além), com o catálogo estendido, a **correção aplicada** nos workflows e o hardening que fecha a porta que o pipeline abre — SHA-pinning, permissões mínimas, isolamento de `pull_request_target`.
+**A engine é a mesma deste repositório.** A diferença da versão Pro **não é código** — é **serviço**. Não existe "motor mais forte" escondido nem catálogo secreto: o que audita seus workflows na Pro é exatamente o que está neste repo, com o mesmo catálogo de 16 checagens. O que muda é o trabalho humano em cima dele:
 
-- ⚙️ Auditoria de **toda a organização / monorepo**, não um arquivo;
-- 🔒 Correção aplicada (pinning, permissões, segredos) entregue via PR;
-- 📄 Evidência de segurança da cadeia de suprimentos (**OWASP A08**).
+- ⚙️ **Auditoria de toda a organização / monorepo**, não de um arquivo — a descoberta já é recursiva (todo `.github/workflows/` e `action.yml` sob o caminho, com poda de dependência vendorada); o serviço roda isso em escala e **adjudica cada achado** (descarta o falso-positivo, confirma o real).
+- 🔧 **Correção aplicada via Pull Request**, não só apontada: SHA-pinning das actions, permissões mínimas por job, isolamento de `pull_request_target` (sem checkout do código do PR) e remoção de segredo do log — o *diff* que fecha a porta, pronto para revisar e mergear.
+- 📄 **Evidência de cadeia de suprimentos** (OWASP **A03:2025 — Software Supply Chain Failures**): relatório SARIF/JSON versionado do antes e do depois, para auditoria e conformidade.
 
-> **Seu deploy roda com um token de escrita e segredos?** Um erro ali entrega o reino. Vale blindar antes.
+> **Seu deploy roda com um token de escrita e segredos?** Um erro ali entrega o reino. O serviço é fechar essa porta — com o *diff* na mão — antes que alguém entre.
 
 <div align="center">
 
