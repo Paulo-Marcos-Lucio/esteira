@@ -174,3 +174,153 @@ def test_secret_to_thirdparty_respects_inline_suppression(tmp_path: Path) -> Non
         "          token: ${{ secrets.GITHUB_TOKEN }}  # esteira: ignore\n",
     )
     assert _findings(root) == []
+
+
+def test_secret_via_env_to_unpinned_thirdparty_is_flagged(tmp_path: Path) -> None:
+    # FN-ESTEIRA-02: o segredo chega por env:, não with: (padrão canônico do gitleaks-action).
+    root = _write(
+        tmp_path,
+        "      - uses: some-org/deploy-action@v1\n"
+        "        env:\n"
+        "          TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
+    )
+    found = _findings(root)
+    assert len(found) == 1
+    assert found[0].severity is Severity.HIGH
+    assert "via env.TOKEN" in found[0].detail
+    assert "secrets.GITHUB_TOKEN" in (found[0].evidence or "")
+
+
+def test_secret_via_env_to_official_action_is_clean(tmp_path: Path) -> None:
+    # Espelho do caso with:: action OFICIAL recebendo o token por env: é uso normal, sem alarme.
+    root = _write(
+        tmp_path,
+        "      - uses: actions/github-script@v7\n"
+        "        env:\n"
+        "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"
+        "        with:\n"
+        "          script: core.info('ok')\n",
+    )
+    assert _findings(root) == []
+
+
+def test_secret_via_env_to_pinned_thirdparty_is_clean(tmp_path: Path) -> None:
+    # Terceiro fixado por SHA recebendo o token por env: — código congelado, sem alarme.
+    root = _write(
+        tmp_path,
+        f"      - uses: peter-evans/create-pull-request@{_SHA}\n"
+        "        env:\n"
+        "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
+    )
+    assert _findings(root) == []
+
+
+def test_secret_in_both_with_and_env_reports_once_with_priority(tmp_path: Path) -> None:
+    # Dedup: um segredo em with: E em env: gera UM achado, e o with: mantém a prioridade de texto.
+    root = _write(
+        tmp_path,
+        "      - uses: some-org/deploy-action@v1\n"
+        "        with:\n"
+        "          token: ${{ secrets.DEPLOY_KEY }}\n"
+        "        env:\n"
+        "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
+    )
+    found = _findings(root)
+    assert len(found) == 1
+    assert "via with.token" in found[0].detail
+
+
+# --------------------------------------------------------------------------- #
+# script-injection via inputs.* / github.event.inputs.* (FN-ESTEIRA-01)
+# --------------------------------------------------------------------------- #
+
+
+def _write_full(tmp_path: Path, content: str) -> Path:
+    wf = tmp_path / ".github" / "workflows" / "w.yml"
+    wf.parent.mkdir(parents=True, exist_ok=True)
+    wf.write_text(content, encoding="utf-8")
+    return tmp_path
+
+
+def _injections(root: Path) -> list:
+    return [f for f in scan(root).findings if f.check_id == "script-injection"]
+
+
+_DISPATCH = (
+    "on:\n  workflow_dispatch:\n    inputs:\n      name:\n        required: true\n"
+    "permissions:\n  contents: read\n"
+    "jobs:\n  g:\n    runs-on: ubuntu-latest\n    steps:\n"
+)
+_CALL = (
+    "on:\n  workflow_call:\n    inputs:\n      target:\n        type: string\n"
+    "permissions:\n  contents: read\n"
+    "jobs:\n  g:\n    runs-on: ubuntu-latest\n    steps:\n"
+)
+
+
+def test_dispatch_input_injection_is_low(tmp_path: Path) -> None:
+    # github.event.inputs.* interpolado no run: sob workflow_dispatch — real, mas disparar exige
+    # acesso de escrita → LOW (higiene), não CRITICAL.
+    root = _write_full(
+        tmp_path, _DISPATCH + '      - run: echo "hi ${{ github.event.inputs.name }}"\n'
+    )
+    found = _injections(root)
+    assert len(found) == 1
+    assert found[0].severity is Severity.LOW
+    assert "inputs" in found[0].detail
+
+
+def test_modern_inputs_form_is_detected(tmp_path: Path) -> None:
+    # A grafia unificada inputs.* também é reconhecida.
+    root = _write_full(tmp_path, _DISPATCH + '      - run: echo "hi ${{ inputs.name }}"\n')
+    assert len(_injections(root)) == 1
+
+
+def test_workflow_call_input_injection_is_high(tmp_path: Path) -> None:
+    # Reusable workflow: o input vem do CALLER (alcançável por atacante) → HIGH, não LOW.
+    root = _write_full(tmp_path, _CALL + '      - run: echo "build ${{ inputs.target }}"\n')
+    found = _injections(root)
+    assert len(found) == 1
+    assert found[0].severity is Severity.HIGH
+
+
+def test_input_via_env_indirection_is_clean(tmp_path: Path) -> None:
+    # A correção recomendada (env indirection + "$VAR") NÃO deve disparar — senão a ferramenta
+    # puniria a própria mitigação.
+    root = _write_full(
+        tmp_path,
+        _DISPATCH + "      - env:\n"
+        "          NAME: ${{ github.event.inputs.name }}\n"
+        '        run: echo "hi $NAME"\n',
+    )
+    assert _injections(root) == []
+
+
+def test_inputs_lookalike_contexts_not_flagged(tmp_path: Path) -> None:
+    # Discriminação: acesso a um CAMPO chamado 'inputs' (precedido de '.') e um identificador que
+    # apenas CONTÉM 'inputs' não são o contexto inputs — sob workflow_call, se casassem, seriam
+    # HIGH; asseguramos 0.
+    root = _write_full(
+        tmp_path,
+        _CALL + "      - run: |\n"
+        '          echo "${{ needs.a.outputs.inputs_json }}"\n'
+        '          echo "${{ fromJSON(needs.a.outputs.cfg).inputs.name }}"\n',
+    )
+    assert _injections(root) == []
+
+
+def test_event_body_injection_stays_critical(tmp_path: Path) -> None:
+    # Guarda de regressão: a calibração de inputs NÃO pode rebaixar os eventos de texto livre.
+    root = _write(tmp_path, '      - run: echo "${{ github.event.issue.title }}"\n')
+    found = _injections(root)
+    assert len(found) == 1
+    assert found[0].severity is Severity.CRITICAL
+
+
+def test_inputs_under_indeterminate_trigger_is_medium(tmp_path: Path) -> None:
+    # inputs.* referenciado sem workflow_dispatch/workflow_call (config atípica): não crava
+    # CRITICAL nem dispensa como LOW — sinaliza MEDIUM.
+    root = _write(tmp_path, '      - run: echo "${{ inputs.name }}"\n')  # _write usa on: push
+    found = _injections(root)
+    assert len(found) == 1
+    assert found[0].severity is Severity.MEDIUM

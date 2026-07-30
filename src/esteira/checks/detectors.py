@@ -46,8 +46,15 @@ _UNTRUSTED = (
     "github.event.workflow_run.head_commit.author.name",
     "github.event.pages",
 )
-# Subcampos injetáveis de commits[] — só .message/.author/.committer (não .id, que é SHA).
-_UNTRUSTED_RE = (re.compile(r"github\.event\.commits.*?\.(?:message|author|committer)"),)
+# Subcampos injetáveis de commits[] — só .message/.author/.committer (não .id, que é SHA) — e os
+# INPUTS do workflow. `inputs.*` (workflow_call/workflow_dispatch) e a grafia legada
+# `github.event.inputs.*` são controláveis por quem alimenta o input; a severidade é calibrada
+# depois pelo gatilho (ver `_injection_severity`). O lookbehind `(?<![\w.])` evita casar DENTRO de
+# outro contexto — `needs.x.outputs.inputs_json` e `myinputs.y` NÃO são inputs.
+_UNTRUSTED_RE = (
+    re.compile(r"github\.event\.commits.*?\.(?:message|author|committer)"),
+    re.compile(r"(?:github\.event\.inputs|(?<![\w.])inputs)\.[\w-]+"),
+)
 
 # Conteúdo de ${{ }}. As alternativas são disjuntas pelo 1º caractere (', ", {, }, resto),
 # então a repetição é determinística — não há backtracking a explorar.
@@ -115,7 +122,7 @@ def run_all(wf: Workflow) -> list[Finding]:
                 "invalid-yaml",
                 wf.path,
                 1,
-                "YAML não pôde ser parseado; as checagens estruturais foram puladas. "
+                "Análise estrutural pulada — o YAML não pôde ser usado como workflow. "
                 f"{wf.parse_error}",
                 evidence=wf.parse_error,
             )
@@ -123,6 +130,7 @@ def run_all(wf: Workflow) -> list[Finding]:
     if wf.data is None:
         out += _fallback_checks(wf)
         return [f for f in out if not _is_suppressed(wf, f)]
+    out += check_malformed_jobs(wf)
     out += check_triggers(wf)
     out += check_ppt_checkout(wf)
     out += check_permissions(wf)
@@ -240,6 +248,36 @@ def _resolve_env_refs(
 # --------------------------------------------------------------------------- #
 
 
+def check_malformed_jobs(wf: Workflow) -> list[Finding]:
+    """`jobs:` presente mas NÃO é um mapa de jobs (é lista/escalar) — cegueira estrutural.
+
+    O topo do arquivo parseou como mapa (então não caiu no fallback), mas ``jobs`` veio como
+    lista ou escalar. Todo o resto das checagens itera ``jobs`` como um dicionário e devolve
+    vazio em silêncio para essa forma — um workflow que esconde um runner self-hosted ou uma
+    injeção dentro de um ``jobs:`` malformado passaria no gate como limpo (no máximo um
+    ``missing-permissions`` LOW, que não reprova o CI no ``--fail-on high`` padrão). Reaproveita
+    a rota ``invalid-yaml`` (HIGH, fail-closed): sinaliza que a análise por job foi pulada e
+    reprova o CI, em vez de ficar verde por engano. ``jobs`` ausente/nulo (arquivo de action
+    com ``runs:``) e ``jobs: {}`` continuam legítimos e não disparam nada.
+    """
+    data = wf.data
+    if not isinstance(data, dict):
+        return []
+    jobs = data.get("jobs")
+    if jobs is None or isinstance(jobs, dict):
+        return []
+    return [
+        make_finding(
+            "invalid-yaml",
+            wf.path,
+            wf.find_line("jobs"),
+            f"o campo 'jobs' é {type(jobs).__name__}, não um mapeamento de jobs; "
+            "as checagens por job/step foram puladas para este arquivo.",
+            evidence="jobs",
+        )
+    ]
+
+
 def check_triggers(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
     names = trigger_names(wf.data or {})
@@ -280,6 +318,43 @@ def _env_var_name(hit: str) -> str:
     """Nome de env var a sugerir a partir do contexto (github.event.issue.title → TITLE)."""
     match = _LAST_IDENT.search(hit)
     return match.group(1).upper() if match is not None else "UNTRUSTED_INPUT"
+
+
+# Gatilhos em que o INPUT é alcançável por quem NÃO tem acesso de escrita: um reusable workflow
+# (workflow_call) recebe o input do caller (que pode ser menos confiável), e eventos privilegiados
+# carregam contexto de fora. Nesses casos a injeção via inputs.* é séria.
+_INPUT_REACHABLE_TRIGGERS = frozenset(
+    {"workflow_call", "pull_request_target", "workflow_run", "repository_dispatch"}
+)
+
+
+def _is_inputs_context(hit: str) -> bool:
+    """O contexto casado é um INPUT do workflow (inputs.* / github.event.inputs.*)?"""
+    return "inputs" in hit
+
+
+def _injection_severity(wf: Workflow, hit: str) -> Severity | None:
+    """Severidade calibrada por gatilho (``None`` ⇒ padrão CRITICAL do catálogo).
+
+    Sinal SUAVE, não filtro: nunca suprime o achado — só ajusta o quão alto ele grita, porque a
+    MESMA expressão vale coisas diferentes conforme QUEM alimenta o input.
+
+    - Evento de texto livre (issue/PR/comentário/commit): permanece CRITICAL — controlado por
+      qualquer um que abra um PR/issue (retorna ``None`` p/ herdar o catálogo).
+    - Input com gatilho alcançável por atacante (workflow_call e cia.): HIGH.
+    - Input só sob workflow_dispatch: LOW — disparar já exige acesso de escrita ao repo, então é
+      higiene, não porta de entrada externa (mas NÃO é zero: o próprio operador pode se enganar,
+      e o hábito de interpolar input cru no shell é o que queremos corrigir).
+    - Gatilho indeterminado: MEDIUM — sinaliza sem cravar CRITICAL.
+    """
+    if not _is_inputs_context(hit):
+        return None
+    names = trigger_names(wf.data or {})
+    if names & _INPUT_REACHABLE_TRIGGERS:
+        return Severity.HIGH
+    if "workflow_dispatch" in names:
+        return Severity.LOW
+    return Severity.MEDIUM
 
 
 def _injection_fix(expr: str, hit: str, *, in_js: bool) -> str:
@@ -347,6 +422,7 @@ def check_script_injection(wf: Workflow) -> list[Finding]:
                         at,
                         f"Contexto não-confiável interpolado: {hit}.",
                         evidence=evidence,
+                        severity=_injection_severity(wf, hit),
                         fix_suggestion=_injection_fix(evidence, hit, in_js=sink == "github-script"),
                     )
                 )
@@ -507,7 +583,7 @@ def _uses_finding(
 
 
 def _with_secret_ref(value: Any) -> str | None:
-    """Retorna a expressão ${{ secrets.X }} / ${{ github.token }} de um valor de with: (ou None).
+    """Retorna a expressão ${{ secrets.X }} / ${{ github.token }} de um valor de with:/env: (ou None).
 
     Só olha DENTRO de ${{ }} (reusa ``_EXPR``) — assim um literal 'secrets.foo' em texto solto
     não vira falso-positivo, só uma interpolação real de segredo.
@@ -520,6 +596,15 @@ def _with_secret_ref(value: Any) -> str | None:
     return None
 
 
+def _first_secret_binding(mapping: dict[str, Any]) -> tuple[str, str] | None:
+    """Primeiro par (chave, expressão-de-segredo) de um mapa with:/env: (ou None se nenhum)."""
+    for key, value in mapping.items():
+        secret = _with_secret_ref(value)
+        if secret is not None:
+            return str(key), secret
+    return None
+
+
 def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
     """Segredo/GITHUB_TOKEN passado via with: a uma action de TERCEIROS não fixada por SHA.
 
@@ -528,13 +613,16 @@ def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
     uma de terceiros fixada por SHA teve o código congelado/revisado — nenhuma alarma. O risco
     real é a de terceiros por tag/branch: a tag pode ser movida para código que exfiltra o
     segredo. Complementa 'unpinned-action-thirdparty' (que ignora se há segredo em jogo).
+
+    O segredo chega à action por DOIS caminhos: ``with:`` (parâmetro da action) e o ``env:``
+    EFETIVO do step (workflow + job + step) — que a action lê em ``process.env``. O padrão
+    canônico do ``gitleaks-action`` entrega o ``GITHUB_TOKEN`` por ``env:``, não ``with:``; olhar
+    só o ``with:`` deixava esse caso passar. Varre os dois, com ``with:`` primeiro para preservar
+    a âncora/redação quando o segredo está lá.
     """
     out: list[Finding] = []
     cursor = 1
-    for step, _env in _step_contexts(wf.data):
-        with_ = step.get("with")
-        if not isinstance(with_, dict):
-            continue
+    for step, env_map in _step_contexts(wf.data):
         parsed = _action_ref(step.get("uses"))
         if parsed is None:
             continue
@@ -544,10 +632,13 @@ def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
         owner = action.split("/", 1)[0]
         if owner in _FIRST_PARTY or _SHA.match(ref):
             continue  # oficial, ou terceiro já fixado por SHA: passar o token é aceitável
-        for key, value in with_.items():
-            secret = _with_secret_ref(value)
-            if secret is None:
+        for source, mapping in (("with", step.get("with")), ("env", env_map)):
+            if not isinstance(mapping, dict):
                 continue
+            binding = _first_secret_binding(mapping)
+            if binding is None:
+                continue
+            key, secret = binding
             anchor = wf.find_line(f"{action}@{ref}", start=cursor)
             cursor = anchor + 1
             line = wf.find_line(secret, default=anchor, start=anchor)
@@ -556,12 +647,12 @@ def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
                     "secret-to-thirdparty-action",
                     wf.path,
                     line,
-                    f"segredo ({secret}) passado via with.{key} para a action de terceiros "
+                    f"segredo ({secret}) passado via {source}.{key} para a action de terceiros "
                     f"'{action}' fixada por '{ref}' (não é SHA).",
                     evidence=secret,
                 )
             )
-            break  # um achado por step basta
+            break  # um achado por step basta (with: tem prioridade sobre env:)
     return out
 
 

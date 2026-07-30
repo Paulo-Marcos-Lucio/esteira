@@ -145,10 +145,11 @@ CATALOG: dict[str, CheckMeta] = {
             "secret-to-thirdparty-action",
             "Segredo/GITHUB_TOKEN passado a action de terceiros não fixada por SHA",
             Severity.HIGH,
-            "Não passe ${{ secrets.* }} / ${{ github.token }} via 'with:' para uma action de "
-            "terceiros fixada por tag/branch — se a tag for movida para código malicioso, ele "
-            "recebe o segredo (inclusive o GITHUB_TOKEN de escrita). Fixe a action por SHA de "
-            "commit completo (40 hex) e passe apenas o token de menor escopo necessário.",
+            "Não passe ${{ secrets.* }} / ${{ github.token }} via 'with:' NEM pelo 'env:' do step "
+            "para uma action de terceiros fixada por tag/branch — a action lê o env em process.env, "
+            "então se a tag for movida para código malicioso ele recebe o segredo (inclusive o "
+            "GITHUB_TOKEN de escrita) pelos dois caminhos. Fixe a action por SHA de commit completo "
+            "(40 hex) e passe apenas o token de menor escopo necessário.",
             "A03:2025 Software Supply Chain Failures",
             "CWE-522",
         ),
