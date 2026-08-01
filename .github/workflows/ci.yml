@@ -25,10 +25,10 @@ jobs:
       # actions fixadas por SHA — o Esteira dá o exemplo do que ele exige.
       # persist-credentials: false — o checkout não precisa deixar o token no .git/config
       # deste job, e é a mitigação que a checagem 'checkout-credentials-in-artifact' pede.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
@@ -50,10 +50,10 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - run: pip install .
@@ -63,7 +63,7 @@ jobs:
       - name: Auditoria (o próprio pipeline deve passar)
         run: esteira scan . --fail-on low -f sarif -o esteira.sarif
       - name: Publica SARIF no Code Scanning
-        uses: github/codeql-action/upload-sarif@08d09a53f0f5d694f253bd25732e4429c9e9337f # v3
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v3
         if: always()
         continue-on-error: true
         with:
