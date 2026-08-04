@@ -1,0 +1,15 @@
+name: supressao-legitima
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # Action interna publicada so por tag pela plataforma; risco aceito e registrado.
+      - uses: minha-org/action-interna@v2 # esteira: ignore

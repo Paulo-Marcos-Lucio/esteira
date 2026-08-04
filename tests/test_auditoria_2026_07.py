@@ -135,7 +135,11 @@ def test_secret_in_run_pega_segredo_que_vai_para_o_stdout(tmp_path: Path, cmd: s
     "cmd",
     [
         "printf '%s' \"${{ secrets.KEY }}\" > id_deploy",
-        'echo "${{ secrets.X }}" >> "$GITHUB_ENV"',
+        # `echo "${{ secrets.X }}" >> "$GITHUB_ENV"` SAIU desta lista em 2026-08 (P2-03 da
+        # auditoria). Ele de fato não vai para o log — a premissa desta calibração estava
+        # certa —, mas foi lido como "logo, não há risco", e há: o segredo passa a existir no
+        # ambiente de todos os steps seguintes. Virou achado Média, com texto próprio, em
+        # test_secret_in_run_2026_08.py.
         'echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login -u x --password-stdin',
     ],
 )

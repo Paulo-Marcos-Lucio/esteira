@@ -1,0 +1,191 @@
+[
+ {
+  "arquivo": "positivos/script-injection.yml",
+  "linha": 10,
+  "eh_achado": true,
+  "regra": "script-injection",
+  "nota": "titulo de issue interpolado direto no shell"
+ },
+ {
+  "arquivo": "positivos/pr-target-checkout.yml",
+  "linha": 12,
+  "eh_achado": true,
+  "regra": "pull-request-target-checkout",
+  "nota": "checkout do head do PR sob pull_request_target"
+ },
+ {
+  "arquivo": "positivos/pr-target-checkout.yml",
+  "linha": 2,
+  "eh_achado": true,
+  "regra": "dangerous-trigger",
+  "nota": "co-ocorrencia legitima: o gatilho privilegiado existe mesmo neste arquivo"
+ },
+ {
+  "arquivo": "positivos/unpinned-thirdparty.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "unpinned-action-thirdparty",
+  "nota": "docker/login-action fixada por tag movivel"
+ },
+ {
+  "arquivo": "positivos/broad-permissions.yml",
+  "linha": 5,
+  "eh_achado": true,
+  "regra": "broad-permissions",
+  "nota": "permissions: write-all"
+ },
+ {
+  "arquivo": "positivos/secret-no-log.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "secret-in-run",
+  "nota": "echo do valor sem redirecionamento: stdout vira log do job"
+ },
+ {
+  "arquivo": "positivos/secret-github-env.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "secret-in-run",
+  "nota": "export para $GITHUB_ENV: propaga para todos os steps seguintes (severidade media)"
+ },
+ {
+  "arquivo": "positivos/curl-pipe-shell.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "curl-pipe-shell",
+  "nota": "codigo da rede executado sem verificacao"
+ },
+ {
+  "arquivo": "positivos/self-hosted-runner.yml",
+  "linha": 9,
+  "eh_achado": true,
+  "regra": "self-hosted-runner",
+  "nota": "runs-on: self-hosted"
+ },
+ {
+  "arquivo": "positivos/dangerous-trigger.yml",
+  "linha": 2,
+  "eh_achado": true,
+  "regra": "dangerous-trigger",
+  "nota": "workflow_run roda no contexto do repositorio-base"
+ },
+ {
+  "arquivo": "positivos/unpinned-firstparty.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "unpinned-action-firstparty",
+  "nota": "actions/setup-node@v4 — oficial, mas por tag"
+ },
+ {
+  "arquivo": "positivos/unpinned-reusable.yml",
+  "linha": 9,
+  "eh_achado": true,
+  "regra": "unpinned-reusable-workflow",
+  "nota": "reusable de OUTRA org fixado por @main"
+ },
+ {
+  "arquivo": "positivos/missing-permissions.yml",
+  "linha": 1,
+  "eh_achado": true,
+  "regra": "missing-permissions",
+  "nota": "achado de arquivo: sem bloco permissions em lugar nenhum"
+ },
+ {
+  "arquivo": "positivos/secrets-inherit.yml",
+  "linha": 10,
+  "eh_achado": true,
+  "regra": "secrets-inherit",
+  "nota": "cofre inteiro entregue ao reusable"
+ },
+ {
+  "arquivo": "positivos/secret-to-thirdparty.yml",
+  "linha": 13,
+  "eh_achado": true,
+  "regra": "secret-to-thirdparty-action",
+  "nota": "segredo via with: para action de terceiro fixada por tag"
+ },
+ {
+  "arquivo": "positivos/secret-to-thirdparty.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "unpinned-action-thirdparty",
+  "nota": "co-ocorrencia legitima: a action de terceiro esta mesmo por tag — e e o que torna o segredo perigoso"
+ },
+ {
+  "arquivo": "positivos/unpinned-container.yml",
+  "linha": 10,
+  "eh_achado": true,
+  "regra": "unpinned-container-image",
+  "nota": "container: node:20-bookworm — tag republicavel"
+ },
+ {
+  "arquivo": "positivos/checkout-credentials.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "checkout-credentials-in-artifact",
+  "nota": "checkout com persist-credentials padrao + upload-artifact com path '.'"
+ },
+ {
+  "arquivo": "positivos/invalid-yaml.yml",
+  "linha": 1,
+  "eh_achado": true,
+  "regra": "invalid-yaml",
+  "nota": "aspas nao fechadas: analise estrutural pulada, fail-closed"
+ },
+ {
+  "arquivo": "negativos/endurecido.yml",
+  "linha": 15,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "actions fixadas por SHA de 40 hex + permissions declarada: nada a apontar"
+ },
+ {
+  "arquivo": "negativos/guarda-de-segredo.yml",
+  "linha": 12,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: echo e ${{ secrets }} na mesma LINHA, em comandos diferentes — o echo imprime o NOME"
+ },
+ {
+  "arquivo": "negativos/guarda-de-segredo.yml",
+  "linha": 13,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: mesma forma com `test -z … && echo`"
+ },
+ {
+  "arquivo": "negativos/instala-segredo-em-disco.yml",
+  "linha": 12,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: printf do segredo com stdout redirecionado para ARQUIVO — padrao canonico"
+ },
+ {
+  "arquivo": "negativos/instala-segredo-em-disco.yml",
+  "linha": 13,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: segredo entregue pelo stdin do docker login (--password-stdin)"
+ },
+ {
+  "arquivo": "negativos/supressao-legitima.yml",
+  "linha": 15,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: action por tag COM supressao inline justificada — a supressao tem de valer"
+ },
+ {
+  "arquivo": "negativos/matriz-e-container-fixados.yml",
+  "linha": 12,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: container por digest sha256 (nao por tag)"
+ },
+ {
+  "arquivo": "negativos/matriz-e-container-fixados.yml",
+  "linha": 22,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: ${{ matrix.node }} passa por env: — contexto proprio do workflow, nao de terceiro"
+ }
+]

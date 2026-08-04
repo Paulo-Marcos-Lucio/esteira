@@ -5,7 +5,32 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Corpus rotulado em `bench/`** — 17 workflows positivos (19 achados rotulados, cobrindo as 16 de
+  16 regras do catálogo) e 5 negativos com 8 linhas-armadilha, com `manifest.json` adjudicado à mão
+  e `avaliar.py` que imprime recall/precisão com intervalo de Wilson. Regra da casa: quem altera
+  detecção roda a bateria antes e depois e registra os dois números aqui. Medição de referência
+  (2026-08-04, Python 3.12.8): `0047ffb` **18/19 recall (IC95% [75% ; 99%]), 2 falso-positivos,
+  precisão 90%** → após o P2-03 **19/19 (IC95% [83% ; 100%]), 0 falso-positivo, precisão 100%**.
+  O número é de corpus autoral e mede cobertura do catálogo, não acurácia de campo — o que ele
+  **não** cobre está declarado em `bench/README.md`.
+- **Proveniência no envelope do relatório** — `commit` (do repositório **auditado**: `ESTEIRA_COMMIT`
+  → `git rev-parse HEAD` → `null`), `ruleset_hash` (SHA-256 do catálogo) e `artifact_sha256`
+  (auto-hash, com a receita de conferência publicada no README), no JSON e no `runs[0].properties`
+  do SARIF. Sem eles, um achado que some na entrega seguinte é indistinguível de uma regra afrouxada.
+
 ### Segurança
+
+- **Redação de credencial na evidência.** Cinco pontos dos detectores copiavam até 120 caracteres
+  **crus** da linha do workflow para `evidence`. Como `secret-in-run` existe justamente para achar
+  linha com segredo, uma linha com `AKIA…`/`ghp_…`/`sk_live_…` embutido ia inteira para o JSON
+  entregue ao cliente e para o `snippet` do SARIF, que sobe para o Code Scanning. Toda credencial de
+  formato conhecido passa a sair mascarada nas pontas, e a redação roda **antes** do truncamento —
+  na ordem inversa, um segredo começando no caractere 110 saía com 10 caracteres crus. Não há regra
+  de entropia genérica de propósito: ela mastigaria o SHA de 40 hex do pin de action, que é a
+  evidência principal de `unpinned-action-*`. *Limite assumido:* credencial de formato desconhecido
+  (senha solta, token interno) não é redigida.
 
 - **ReDoS exponencial em `curl-pipe-shell` (a ferramenta era o DoS do pipeline que ela audita).**
   O padrão de wrappers (`sudo`/`env`/`time`/…) tinha quantificador aninhado ilimitado e ambíguo:
@@ -26,6 +51,22 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Corrigido
 
+- **`secret-in-run` acusava o `echo` errado e não via o export para `$GITHUB_ENV`.** Bastava
+  "existe `echo` na linha" + "existe `${{ secrets }}` na linha" para disparar, ainda que em
+  **comandos diferentes**. Medido no fork `iac-scanner`: os 2 achados da regra eram da forma
+  `[ -n "${{ secrets.X }}" ] || { echo "::warning::não configurado"; exit 0; }`, em que o `echo`
+  imprime o **nome** da variável e nunca o valor — 0/2 de precisão. E a linha seguinte,
+  `echo "K=${{ secrets.X }}" >> $GITHUB_ENV`, ficava calada por uma calibração que acertou a
+  premissa (o `>>` grava em arquivo, e o GitHub mascara segredo no log) e errou a conclusão: o
+  segredo passa a existir no ambiente de **todos os steps seguintes**, inclusive actions de
+  terceiros. Depois: **3/3**, com texto próprio e severidade Média para o caso `$GITHUB_ENV`. A
+  recomendação do catálogo perdeu a palavra "log" — ela é colada ao detalhe na mensagem do SARIF,
+  e afirmar "vaza no log" ao lado de um detalhe que diz o contrário se contradiz na mesma frase.
+  `$GITHUB_OUTPUT` **não** foi incluído: a propagação é análoga, mas não foi adjudicada em campo.
+- **`owasp_edition` grafado como `owasp-edition` no SARIF.** O campo documentado (e emitido no JSON)
+  é `owasp_edition`; dentro das `rules` do SARIF ele saía com hífen, num *property bag* que o SARIF
+  não valida — quem lia a chave documentada levava `KeyError`. Corrigida a grafia e passou a ser
+  emitido também no nível do `run`.
 - **Falso-negativo de `script-injection`: cego a `inputs.*` / `github.event.inputs.*`.** A tupla de
   contextos não-confiáveis não incluía os inputs do workflow, então `run: echo "${{ inputs.x }}"` (a
   porta de um reusable workflow, alcançável pelo caller) e a grafia legada `github.event.inputs.*`

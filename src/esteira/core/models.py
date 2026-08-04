@@ -78,6 +78,11 @@ class Workflow:
 class ScanResult:
     findings: list[Finding] = field(default_factory=list)
     files_scanned: int = 0
+    # Raiz varrida, carregada até o relatório porque a proveniência (`commit`) tem de
+    # identificar o CÓDIGO AUDITADO, não o diretório de onde a ferramenta foi invocada:
+    # `esteira scan /outro/repo` rodando de dentro deste repo carimbaria o commit errado —
+    # o pior tipo de metadado, o que parece certo.
+    root: str | None = None
 
     def max_severity(self) -> Severity | None:
         if not self.findings:

@@ -1,0 +1,9 @@
+name: reusable-por-tag
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  chama:
+    uses: outra-org/infra/.github/workflows/deploy.yml@main

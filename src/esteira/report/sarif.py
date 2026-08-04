@@ -8,6 +8,7 @@ from typing import Any
 
 from esteira import __version__
 from esteira.checks.catalog import CATALOG, OWASP_EDITION
+from esteira.core import provenance
 from esteira.core.models import Finding, ScanResult, Severity
 
 _LEVEL: dict[Severity, str] = {
@@ -53,7 +54,10 @@ def _rules() -> list[dict[str, Any]]:
                 "security-severity": _SECURITY_SEVERITY[meta.severity],
                 "cwe": meta.cwe,
                 "owasp": meta.owasp,
-                "owasp-edition": OWASP_EDITION,
+                # `owasp_edition`, com underscore: era `owasp-edition` (hífen) aqui e
+                # `owasp_edition` no JSON e no README. Quem consumia a chave documentada
+                # levava KeyError num property bag que o SARIF não valida.
+                "owasp_edition": OWASP_EDITION,
             },
         }
         help_uri = _help_uri(meta.cwe)
@@ -116,7 +120,17 @@ def _results(result: ScanResult) -> list[dict[str, Any]]:
 
 
 def to_sarif(result: ScanResult) -> str:
-    document = {
+    # A edição do OWASP e a proveniência vão no NÍVEL DO RUN, e não só dentro de cada regra:
+    # quem consome o arquivo inteiro (a aba Security, um agregador) precisava abrir uma regra
+    # qualquer para descobrir sob qual edição os rótulos `A03` foram escritos — e não tinha
+    # como descobrir contra qual commit o run foi produzido.
+    propriedades: dict[str, Any] = {
+        "owasp_edition": OWASP_EDITION,
+        "commit": provenance.commit(result.root),
+        "ruleset_hash": provenance.ruleset_hash(),
+        "artifact_sha256": None,
+    }
+    document: dict[str, Any] = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
         "runs": [
@@ -130,7 +144,11 @@ def to_sarif(result: ScanResult) -> str:
                     }
                 },
                 "results": _results(result),
+                "properties": propriedades,
             }
         ],
     }
+    # Sobre o `run` já montado e com o campo ainda em `null` — mesma receita do JSON, aplicada
+    # ao objeto onde o campo de fato mora.
+    propriedades["artifact_sha256"] = provenance.canonical_sha256(document["runs"][0])
     return json.dumps(document, indent=2, ensure_ascii=False)

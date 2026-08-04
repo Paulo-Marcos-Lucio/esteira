@@ -1,0 +1,11 @@
+name: curl-pipe
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -sSL https://exemplo.invalid/install.sh | bash
