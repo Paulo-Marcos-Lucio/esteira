@@ -447,21 +447,43 @@ def check_secret_in_run(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
     cursor = 1
     for sink, line in _exec_lines(wf):
-        if not _secret_echo_leak(line, sink):
+        vazamento = _secret_echo_leak(line, sink)
+        if vazamento is None:
             continue
         stripped = line.strip()
         at = wf.find_line(stripped[:60], start=cursor) if stripped else cursor
         cursor = at + 1  # âncora: N vazamentos idênticos ⇒ N linhas distintas
-        out.append(
-            make_finding(
-                "secret-in-run",
-                wf.path,
-                at,
-                "Um segredo é impresso num comando que escreve no log do job.",
-                evidence=evidencia(stripped),
-            )
-        )
+        out.append(_secret_finding(wf.path, at, vazamento, stripped))
     return out
+
+
+# O texto tem de descrever o risco QUE EXISTE em cada caso. Dizer "vai para o log" sobre um
+# `echo … >> $GITHUB_ENV` está errado em dois níveis — o `>>` grava em ARQUIVO e o GitHub
+# mascara segredo no log — e um cliente que confere a afirmação, vê que não se sustenta e
+# descarta o achado leva junto o risco real, que ali é a propagação para os steps seguintes.
+_DETALHE_VAZAMENTO: dict[str, str] = {
+    "log": "Um segredo é impresso no stdout do step e vai para o log do job.",
+    "github-env": (
+        "Segredo exportado para $GITHUB_ENV: ele passa a existir no ambiente de TODOS os "
+        "steps seguintes do job, inclusive actions de terceiros — que recebem o process.env "
+        "inteiro, sem precisar declarar nada."
+    ),
+}
+# Exportar para o ambiente não expõe o valor fora do job: é escopo largo demais, não vazamento
+# público. Rebaixar para Média é o que mantém o achado crível — e o `--fail-on high` do
+# cliente continua reprovando pelo caso que de fato manda o segredo para fora.
+_SEVERIDADE_VAZAMENTO: dict[str, Severity] = {"github-env": Severity.MEDIUM}
+
+
+def _secret_finding(path: str, at: int, vazamento: str, linha: str) -> Finding:
+    return make_finding(
+        "secret-in-run",
+        path,
+        at,
+        _DETALHE_VAZAMENTO[vazamento],
+        evidence=evidencia(linha),
+        severity=_SEVERIDADE_VAZAMENTO.get(vazamento),
+    )
 
 
 # Redirecionamento de saída para ARQUIVO (`> path`, `>> "$GITHUB_ENV"`), distinto de
@@ -474,30 +496,82 @@ _REDIRECT_TO_FILE = re.compile(r"(?<![0-9&])>>?\s*[^\s&|;]")
 # DENTRO do texto ecoado (`echo "==> publicando ${{ secrets.X }}"`) se disfarça de gravação
 # em arquivo e engole o achado.
 _QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
-# Comandos que imprimem no log do job, por sink. No `run:` é o shell; no `github-script`
-# a saída de console/@actions/core também vai para o log da Action.
+# Fronteira entre COMANDOS de uma mesma linha de shell. `||` antes de `|` (a alternância do
+# `re` é preguiçosa e casaria o pipe sozinho, partindo o `||` em dois). `&` isolado ficou de
+# fora de propósito: aparece em `2>&1`/`>&2`, onde não separa comando nenhum.
+_SEPARADOR_DE_COMANDO = re.compile(r"\|\||&&|[;|]")
+# `$GITHUB_ENV` em qualquer das grafias que o shell aceita como alvo do redirecionamento.
+_GITHUB_ENV = re.compile(r"\$\{?GITHUB_ENV\}?")
+# Comandos que imprimem no stdout, por sink. No `run:` é o shell; no `github-script` a saída
+# de console/@actions/core também vai para o log da Action.
 _PRINT_COMMANDS: dict[str, tuple[str, ...]] = {
     "run": ("echo", "printf"),
     "github-script": ("console.log", "console.error", "console.warn", "core.info", "core.warning"),
 }
 
 
-def _secret_echo_leak(line: str, sink: str = "run") -> bool:
+def _neutraliza_aspas(line: str) -> str:
+    """Mesma linha com o CONTEÚDO das aspas trocado por ``x``, PRESERVANDO os índices.
+
+    Separador de comando e seta de redirecionamento dentro de string literal não separam nem
+    redirecionam nada (``echo "a|b ==> c"``). Trocar por texto de mesmo comprimento — em vez de
+    apagar — deixa as posições do original e da versão neutra alinhadas, que é o que permite
+    procurar a estrutura aqui e ler a evidência lá.
+    """
+    return _QUOTED.sub(lambda m: m.group(0)[0] + "x" * (len(m.group(0)) - 2) + m.group(0)[0], line)
+
+
+def _segmento(neutro: str, pos: int) -> tuple[int, int]:
+    """(início, fim) do comando que contém ``pos``, delimitado por ``;`` ``|`` ``||`` ``&&``."""
+    inicio, fim = 0, len(neutro)
+    for sep in _SEPARADOR_DE_COMANDO.finditer(neutro):
+        if sep.end() <= pos:
+            inicio = sep.end()
+        elif sep.start() >= pos:
+            fim = sep.start()
+            break
+    return inicio, fim
+
+
+def _secret_echo_leak(line: str, sink: str = "run") -> str | None:
+    """Classifica o vazamento da linha: ``"log"``, ``"github-env"`` ou ``None``.
+
+    A checagem exige que o comando de impressão e o segredo estejam no MESMO comando. Sem
+    isso, "existe echo na linha" + "existe ${{ secrets }} na linha" bastava — e o idioma mais
+    banal de pipeline de matriz virava falso-positivo:
+
+        [ -n "${{ secrets.OPENAI_API_KEY }}" ] || { echo "::warning::não configurado"; exit 0; }
+
+    Medido no fork `iac-scanner`: 2 de 2 achados de `secret-in-run` eram desta forma, com o
+    `echo` imprimindo o NOME da variável e nunca o valor. Enquanto isso, a linha seguinte —
+    `echo "K=${{ secrets.X }}" >> $GITHUB_ENV`, que é onde há risco — ficava calada.
+    """
     lowered = line.lower()
-    if not any(cmd in lowered for cmd in _PRINT_COMMANDS.get(sink, ())):
-        return False
-    if not any("secrets." in m.group(1) for m in _EXPR.finditer(line)):
-        return False
+    comandos = _PRINT_COMMANDS.get(sink, ())
+    if not any(cmd in lowered for cmd in comandos):
+        return None
     if sink != "run":
-        return True  # no JS não há redirecionamento de shell: o valor vai para o log
-    # Casos em que o segredo NÃO chega ao log da Action:
-    #  - vai para o stdin do próximo comando (`--password-stdin` / `--with-token`);
-    #  - o STDOUT é redirecionado para um ARQUIVO (`printf '%s' "${{secrets.KEY}}" > id_deploy`,
-    #    `echo "${{secrets.X}}" >> "$GITHUB_ENV"`) — padrão canônico e seguro de instalar/
-    #    exportar um segredo. O que vaza é o `echo`/`printf` SEM redirecionamento (stdout → log).
+        # No JS não há redirecionamento de shell: o valor vai direto para o log da Action.
+        return "log" if any("secrets." in m.group(1) for m in _EXPR.finditer(line)) else None
+    # Segredo entregue pelo STDIN do próximo comando não passa pelo stdout em momento nenhum.
     if "--password-stdin" in lowered or "--with-token" in lowered:
-        return False
-    return not _REDIRECT_TO_FILE.search(_QUOTED.sub("''", line))
+        return None
+    neutro = _neutraliza_aspas(line)
+    for expr in _EXPR.finditer(line):
+        if "secrets." not in expr.group(1):
+            continue
+        inicio, fim = _segmento(neutro, expr.start())
+        if not any(cmd in lowered[inicio : expr.start()] for cmd in comandos):
+            continue  # o `echo` desta linha está em OUTRO comando: não é ele que imprime
+        redirecionamento = _REDIRECT_TO_FILE.search(neutro, expr.end(), fim)
+        if redirecionamento is None:
+            return "log"
+        if _GITHUB_ENV.search(line[redirecionamento.start() : fim]):
+            return "github-env"
+        # Redirecionado para arquivo comum (`printf '%s' "${{secrets.KEY}}" > id_deploy`):
+        # padrão canônico e seguro de instalar um segredo em disco. Segue para a próxima
+        # expressão da linha em vez de encerrar — pode haver um segundo segredo depois.
+    return None
 
 
 def check_curl_pipe(wf: Workflow) -> list[Finding]:
@@ -1081,16 +1155,11 @@ def _fallback_checks(wf: Workflow) -> list[Finding]:
             )
             if finding is not None:
                 out.append(finding)
-        if _secret_echo_leak(line):
-            out.append(
-                make_finding(
-                    "secret-in-run",
-                    wf.path,
-                    lineno,
-                    "Um segredo é impresso em um comando (echo/printf).",
-                    evidence=evidencia(line),
-                )
-            )
+        vazamento = _secret_echo_leak(line)
+        if vazamento is not None:
+            # Mesmo texto do caminho estrutural: o cliente não pode receber duas descrições
+            # diferentes do mesmo risco só porque o YAML dele não parseou.
+            out.append(_secret_finding(wf.path, lineno, vazamento, line))
         # `_CURL_PIPE` exige POSIÇÃO DE COMANDO. No caminho estrutural o valor do `run:` já
         # chega isolado; aqui a linha é crua, e o prefixo `- run: ` empurraria o `curl` para
         # fora dessa posição — falso-negativo só por estarmos no fallback.
