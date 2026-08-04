@@ -1,0 +1,23 @@
+name: matriz-fixada
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    container: node@sha256:c1a1b3b4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f80
+    strategy:
+      matrix:
+        node: ["20", "22"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: build sem interpolar nada de terceiro
+        env:
+          VERSAO: ${{ matrix.node }}
+        run: echo "node $VERSAO"

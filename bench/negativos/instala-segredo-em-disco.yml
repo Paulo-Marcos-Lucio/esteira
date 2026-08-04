@@ -1,0 +1,14 @@
+name: instala-segredo-em-disco
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: chave de deploy e login no registry
+        run: |
+          printf '%s' "${{ secrets.DEPLOY_KEY }}" > id_deploy
+          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login -u ci --password-stdin

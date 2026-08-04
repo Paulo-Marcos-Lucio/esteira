@@ -1,0 +1,14 @@
+name: guarda-de-segredo
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: pula quando o provedor nao esta configurado
+        run: |
+          [ -n "${{ secrets.OPENAI_API_KEY }}" ] || { echo "::warning::OPENAI_API_KEY nao configurada"; exit 0; }
+          test -z "${{ secrets.ANTHROPIC_API_KEY }}" && echo "::notice::sem anthropic, seguindo"

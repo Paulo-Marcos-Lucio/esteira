@@ -1,0 +1,12 @@
+name: imagem-por-tag
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: node:20-bookworm
+    steps:
+      - run: node --version

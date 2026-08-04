@@ -1,0 +1,11 @@
+name: runner-proprio
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - run: echo ola

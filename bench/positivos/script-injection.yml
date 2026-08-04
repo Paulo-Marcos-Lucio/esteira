@@ -1,0 +1,10 @@
+name: injecao
+on: issues
+permissions:
+  contents: read
+jobs:
+  triagem:
+    runs-on: ubuntu-latest
+    steps:
+      - name: comenta o titulo
+        run: echo "titulo=${{ github.event.issue.title }}"

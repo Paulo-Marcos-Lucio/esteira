@@ -1,0 +1,9 @@
+name: gatilho-privilegiado
+on: workflow_run
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ola
