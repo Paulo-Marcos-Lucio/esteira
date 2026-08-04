@@ -45,7 +45,9 @@ def _scan_ids(tmp_path: Path, text: str, name: str = "w.yml") -> set[str]:
 def _many_jobs(n: int) -> Workflow:
     text = "on: push\npermissions: {}\njobs:\n"
     for i in range(n):
-        text += f"  job{i}:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: some-org/act@v1\n"
+        text += (
+            f"  job{i}:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: some-org/act@v1\n"
+        )
     return Workflow(path="x", text=text, data=yaml.safe_load(text))
 
 
@@ -142,7 +144,9 @@ def test_empty_jobs_map_is_not_flagged(tmp_path: Path) -> None:
 
 def test_action_file_without_jobs_is_not_flagged(tmp_path: Path) -> None:
     # Arquivo de composite action tem 'runs:' e NÃO tem 'jobs:' — legítimo, sem sinal falso.
-    action = "runs:\n  using: composite\n  steps:\n    - run: echo ${{ github.event.issue.title }}\n"
+    action = (
+        "runs:\n  using: composite\n  steps:\n    - run: echo ${{ github.event.issue.title }}\n"
+    )
     ids = _scan_ids(tmp_path, action, name="action.yml")
     assert "invalid-yaml" not in ids
     assert "script-injection" in ids  # a checagem real do arquivo de action segue viva

@@ -64,7 +64,7 @@ esta tabela divergir do catálogo, inclusive na severidade).
 
 ## 🔬 O que foi medido
 
-Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (190 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (211 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
 
 - **16 de 16 checagens** disparam na severidade **fixada em teste** contra casos sintéticos, com **zero divergência de severidade**. O meta-teste de catálogo é implacável: checagem nova nasce vermelha até ter caso positivo, severidade declarada, rótulo OWASP da edição e linha nesta tabela — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão do CI) faz a suíte falhar.
 - **Zero falso-positivo** no workflow endurecido que **fixa as actions por SHA** e declara `permissions: contents: read`: ele sai com **nenhum achado**. Pinar por SHA e declarar o mínimo é exatamente o que a ferramenta cobra — quem já faz não recebe ruído.
@@ -201,7 +201,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ## 🔬 Qualidade de engenharia & método
 
-**Portões, medidos agora neste repo:** 190 testes verdes · cobertura **95%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (14 arquivos) · `ruff` lint + format limpos (27 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+**Portões, medidos agora neste repo:** 211 testes verdes · cobertura **95%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (14 arquivos) · `ruff` lint + format limpos (28 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
 
 **Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
 
