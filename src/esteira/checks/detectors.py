@@ -16,6 +16,7 @@ from typing import Any
 from esteira.checks.catalog import make_finding
 from esteira.core.loader import trigger_names
 from esteira.core.models import Finding, Severity, Workflow
+from esteira.core.redaction import evidence as evidencia
 
 # Contextos controláveis por terceiros — nunca devem ir direto para o shell.
 _UNTRUSTED = (
@@ -457,7 +458,7 @@ def check_secret_in_run(wf: Workflow) -> list[Finding]:
                 wf.path,
                 at,
                 "Um segredo é impresso num comando que escreve no log do job.",
-                evidence=stripped[:120],
+                evidence=evidencia(stripped),
             )
         )
     return out
@@ -515,7 +516,7 @@ def check_curl_pipe(wf: Workflow) -> list[Finding]:
                 wf.path,
                 at,
                 "Download da rede executado direto no shell.",
-                evidence=stripped[:120],
+                evidence=evidencia(stripped),
             )
         )
     return out
@@ -872,7 +873,7 @@ def _ppt_step_finding(
                         line,
                         "checkout do código do PR via shell (gh pr checkout / git fetch pull) "
                         "sob pull_request_target.",
-                        evidence=line_text.strip()[:120],
+                        evidence=evidencia(line_text),
                     ),
                     line + 1,
                 )
@@ -1087,7 +1088,7 @@ def _fallback_checks(wf: Workflow) -> list[Finding]:
                     wf.path,
                     lineno,
                     "Um segredo é impresso em um comando (echo/printf).",
-                    evidence=line.strip()[:120],
+                    evidence=evidencia(line),
                 )
             )
         # `_CURL_PIPE` exige POSIÇÃO DE COMANDO. No caminho estrutural o valor do `run:` já
@@ -1100,7 +1101,7 @@ def _fallback_checks(wf: Workflow) -> list[Finding]:
                     wf.path,
                     lineno,
                     "Download da rede executado direto no shell.",
-                    evidence=line.strip()[:120],
+                    evidence=evidencia(line),
                 )
             )
     out += _self_hosted_lines(wf)

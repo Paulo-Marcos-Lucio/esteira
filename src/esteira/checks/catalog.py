@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from esteira.core.models import Finding, Severity
+from esteira.core.redaction import redact
 
 # Edição do OWASP Top 10 usada nos rótulos deste catálogo.
 OWASP_EDITION = "2025"
@@ -200,16 +201,20 @@ def make_finding(
     fix_suggestion: str | None = None,
 ) -> Finding:
     meta = CATALOG[check_id]
+    # Ponto de estrangulamento da redação. Poderia ficar em cada detector, mas então cada
+    # checagem NOVA nasceria vazando por omissão — e a única que importa é a que ninguém
+    # lembrou de blindar. Os três campos redigidos são os que carregam texto vindo do arquivo
+    # auditado; `recommendation` vem do catálogo e nunca contém dado do cliente.
     return Finding(
         check_id=meta.id,
         title=meta.title,
         severity=severity or meta.severity,
         path=path,
         line=line,
-        detail=detail,
+        detail=redact(detail) or detail,
         recommendation=meta.recommendation,
-        evidence=evidence,
+        evidence=redact(evidence),
         cwe=meta.cwe,
         owasp=meta.owasp,
-        fix_suggestion=fix_suggestion,
+        fix_suggestion=redact(fix_suggestion),
     )
