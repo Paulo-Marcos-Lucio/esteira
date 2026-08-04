@@ -68,4 +68,4 @@ def scan(
             if finding.check_id in skip_set:
                 continue
             findings.append(finding)
-    return ScanResult(findings=findings, files_scanned=len(files))
+    return ScanResult(findings=findings, files_scanned=len(files), root=str(base))
