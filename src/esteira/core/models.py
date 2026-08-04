@@ -61,8 +61,15 @@ class Workflow:
         return self.text.splitlines()
 
     def find_line(self, needle: str, default: int = 1, start: int = 1) -> int:
-        for index, line in enumerate(self.lines, start=1):
-            if index >= start and needle in line:
+        # Indexa a lista a partir de ``start`` em vez de iterar desde a linha 1 descartando o
+        # que vem antes. Semântica idêntica (1ª linha >= start contendo ``needle``, senão
+        # ``default``), mas com o ``cursor`` monotônico das checagens o custo total cai de
+        # O(n²) para O(n): um workflow gerado com milhares de steps fazia a auditoria — que
+        # roda DENTRO do CI — escalar em quadrado (8 mil `uses:` ⇒ ~3 s só de âncora), o que um
+        # workflow hostil poderia inflar até estourar o timeout do próprio gate de segurança.
+        lines = self.lines
+        for index in range(max(start, 1), len(lines) + 1):
+            if needle in lines[index - 1]:
                 return index
         return default
 

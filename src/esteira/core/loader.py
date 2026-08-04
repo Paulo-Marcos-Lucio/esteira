@@ -82,6 +82,17 @@ def load(path: Path | str) -> Workflow:
         parsed = None
         parse_error = _format_yaml_error(exc)
     data = parsed if isinstance(parsed, dict) else None
+    if parse_error is None and parsed is not None and data is None:
+        # O YAML é válido, mas o topo do documento NÃO é um mapeamento (é uma lista, um escalar,
+        # etc.). Um workflow/action do GitHub é sempre um mapa no topo, então isto não é auditável
+        # como workflow. Sem este ramo, ``data`` viraria ``None`` e o arquivo cairia no fallback
+        # por linha SEM sinal nenhum — um documento estruturalmente inválido passaria no gate como
+        # "0 achados, exit 0" (fail-open). Reaproveita a rota ``invalid-yaml`` (HIGH, fail-closed):
+        # o fallback textual ainda roda (não perde achado), mas o CI reprova em vez de ficar verde.
+        parse_error = (
+            f"o topo do documento é {type(parsed).__name__}, não um mapeamento de "
+            "workflow/action (um workflow do GitHub é sempre um mapa no topo)."
+        )
     return Workflow(path=str(path), text=text, data=data, parse_error=parse_error)
 
 

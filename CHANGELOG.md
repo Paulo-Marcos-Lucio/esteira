@@ -26,6 +26,22 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Corrigido
 
+- **Falso-negativo de `script-injection`: cego a `inputs.*` / `github.event.inputs.*`.** A tupla de
+  contextos não-confiáveis não incluía os inputs do workflow, então `run: echo "${{ inputs.x }}"` (a
+  porta de um reusable workflow, alcançável pelo caller) e a grafia legada `github.event.inputs.*`
+  passavam batidos. Agora são reconhecidos, com **severidade calibrada pelo gatilho** — sinal suave,
+  nunca filtro: `workflow_call` (input vem do caller) = **HIGH**, só `workflow_dispatch` (disparar
+  exige acesso de escrita) = **LOW**, gatilho indeterminado = **MEDIUM**; os eventos de texto livre
+  (issue/PR/comentário) seguem **CRITICAL**. A discriminação por lookbehind evita o falso-positivo:
+  um campo JSON `.inputs.` (acesso após `.`) e um identificador como `inputs_json` **não** casam.
+  Provado em campo: a `deploy.yml` da Bússola (input cru num `if [ … ]`) que saía limpa agora
+  aparece como LOW, sem tocar nenhum outro achado.
+- **Falso-negativo de `secret-to-thirdparty-action`: só olhava `with:`, não o `env:`.** Uma action
+  de terceiros por tag recebendo `${{ secrets.* }}` / `${{ github.token }}` pelo **env efetivo** do
+  step (workflow + job + step) — que a action lê em `process.env` — não gerava o achado escalado. É
+  o padrão canônico do `gitleaks-action` (`GITHUB_TOKEN` via `env:`). Agora varre os dois caminhos e
+  emite um único achado por step (`with:` tem prioridade de redação). Provado em campo: o gitleaks da
+  Bússola (`pipeline.yaml`, `ci.yml`) passa a ser flagrado como **HIGH**, sem novo falso-positivo.
 - **Falso-negativo em `${{ … }}`: N expressões viravam UMA.** O `}}` era consumível como conteúdo,
   então a expressão se estendia até a última do texto. Três injeções no mesmo bloco `run:` chegavam
   como um único achado — dois desapareciam — e a evidência saía como um bloco multi-linha.
