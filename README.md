@@ -14,7 +14,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://img.shields.io/badge/mypy-strict-2A6DB2.svg)](https://mypy-lang.org/)
-[![tests](https://img.shields.io/badge/tests-248%20passing-brightgreen.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-249%20passing-brightgreen.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![coverage](https://img.shields.io/badge/coverage-96%25-green.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP](https://img.shields.io/badge/OWASP-Top%2010%3A2025-000000.svg)](https://owasp.org/Top10/)
 
@@ -68,7 +68,9 @@ esta tabela divergir do catálogo, inclusive na severidade).
 
 ## 🔬 O que foi medido
 
-Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (248 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (249 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+
+> **Comparação honesta contra o zizmor** (o incumbente maduro do domínio): o benchmark reprodutível da suíte está em [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — versões e commits fixados, e diz onde a Esteira encontra menos que o zizmor. Onde a Esteira ganha é precisão em repositório limpo e calibração; **não vendemos superioridade de cobertura**.
 
 - **17 de 17 checagens** disparam na severidade **fixada em teste** contra casos sintéticos, com **zero divergência de severidade**. O meta-teste de catálogo é implacável: checagem nova nasce vermelha até ter caso positivo, severidade declarada, rótulo OWASP da edição e linha nesta tabela — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão do CI) faz a suíte falhar.
 - **Zero falso-positivo** no workflow endurecido que **fixa as actions por SHA** e declara `permissions: contents: read`: ele sai com **nenhum achado**. Pinar por SHA e declarar o mínimo é exatamente o que a ferramenta cobra — quem já faz não recebe ruído.
@@ -270,7 +272,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ## 🔬 Qualidade de engenharia & método
 
-**Portões, medidos agora neste repo:** 248 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **96%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (16 arquivos) · `ruff` lint + format limpos (36 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+**Portões, medidos agora neste repo:** 249 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **96%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (16 arquivos) · `ruff` lint + format limpos (36 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
 
 **Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
 
