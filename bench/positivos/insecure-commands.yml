@@ -1,0 +1,12 @@
+name: comandos-inseguros
+on:
+  push:
+    branches: [main]
+permissions: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true'
+    steps:
+      - run: echo ola

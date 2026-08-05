@@ -84,6 +84,17 @@ CATALOG: dict[str, CheckMeta] = {
             "CWE-532",
         ),
         CheckMeta(
+            "insecure-commands",
+            "Comandos inseguros de workflow reabilitados (ACTIONS_ALLOW_UNSECURE_COMMANDS)",
+            Severity.HIGH,
+            "Remova ACTIONS_ALLOW_UNSECURE_COMMANDS. Ela reativa os comandos legados 'set-env' e "
+            "'add-path' via stdout (CVE-2020-15228): qualquer saída controlada por atacante passa a "
+            "poder injetar variável de ambiente ou entrada no PATH e escalar para execução de código. "
+            "Use os arquivos $GITHUB_ENV / $GITHUB_PATH com valores confiáveis.",
+            "A05:2025 Injection",
+            "CWE-94",
+        ),
+        CheckMeta(
             "curl-pipe-shell",
             "Download e execução direta (curl|bash)",
             Severity.MEDIUM,
