@@ -73,6 +73,38 @@ Números desta bateria — todos **reproduzíveis com `pytest` neste repositóri
 
 ---
 
+## ⚡ Quickstart
+
+Do zero ao primeiro relatório em três comandos. **Pré-requisito:** Python **3.10+** e `git`.
+
+```bash
+# 1. instale a partir do Git (nome no PyPI é de terceiro — veja abaixo)
+pipx install "git+https://github.com/Paulo-Marcos-Lucio/esteira.git"
+
+# 2. audite os workflows do repositório atual
+cd meu-repositorio
+esteira scan .
+
+# 3. (opcional) gere o SARIF para a aba Security do GitHub
+esteira scan . -f sarif -o esteira.sarif
+```
+
+O `scan .` procura `.github/workflows/*.yml` recursivamente e imprime cada achado com
+**linha, severidade, correção sugerida** e um plano de ação. Sai com **código 1** quando há
+achado `high`+ (o default), então já serve de portão de CI sem mais configuração. Exemplo real
+(fixture com `pull_request_target` + interpolação de título de PR no `run:`):
+
+```
+Sev      Checagem            Local                          Detalhe
+CRÍTICA  script-injection    .github/workflows/deploy.yml:8 Contexto não-confiável interpolado
+BAIXA    missing-permissions .github/workflows/deploy.yml:1 Sem bloco 'permissions'
+BAIXA    dangerous-trigger   .github/workflows/deploy.yml:2 Gatilho privilegiado em uso
+...
+4 achado(s) em 1 workflow(s) —  CRÍTICA: 1    BAIXA: 3     (exit 1)
+```
+
+---
+
 ## 🚀 Instalação
 
 ```bash
@@ -109,9 +141,35 @@ esteira scan . -f sarif -o esteira.sarif
 # aponta direto para um arquivo
 esteira scan .github/workflows/deploy.yml
 
+# roda só (ou pula) checagens específicas — repita a flag para várias
+esteira scan . --only script-injection --only broad-permissions
+esteira scan . --skip unpinned-action-firstparty
+
 # lista as checagens
 esteira rules
 ```
+
+### Flags do `scan`
+
+| Flag | Default | Quando mudar |
+| --- | --- | --- |
+| `-f, --format` | `console` | `json` para consumir por máquina; `sarif` para a aba Security do GitHub |
+| `-o, --output` | *(stdout)* | grava o relatório num arquivo (obrigatório com nada em `console`; passar `-o` com `--format console` é erro de uso → exit 2) |
+| `--fail-on` | `high` | `critical` afrouxa o portão; `low`/`medium` aperta. `none` nunca falha (só relata) |
+| `--only` | *(todas)* | foca uma triagem numa ou mais checagens (id da coluna `esteira rules`); id desconhecido → exit 2 |
+| `--skip` | *(nenhuma)* | silencia uma checagem ruidosa no seu contexto sem desligar o resto |
+
+### Supressão inline (por linha)
+
+Marcou um ponto como revisado e seguro? Suprima **na linha do achado**:
+
+```yaml
+- uses: minha-org/action-interna@v2  # esteira: ignore[unpinned-action-firstparty]
+```
+
+`# esteira: ignore[regra]` é **escopada**: só cala a checagem nomeada, então não esconde por
+acidente outro achado na mesma linha. `# esteira: ignore` (sem colchete) cala a linha inteira.
+Uma marca `# zizmor: ignore` de outro auditor também é respeitada como "linha revisada".
 
 ### No próprio GitHub Actions
 
@@ -232,6 +290,7 @@ Ferramenta **defensiva**, para auditar pipelines que você mantém ou tem autori
 Análise estática não substitui revisão humana, e a Esteira é honesta sobre o que **não** cobre hoje:
 
 - **Exfiltração de segredo por rede** (`curl -d "t=${{ secrets.X }}" host`) não é marcada: enviar um token a um host legítimo (`Authorization: Bearer`) é uso normal, e flagar geraria falso-positivo demais. São apontados o segredo impresso no stdout (`echo`/`printf` no `run:`, `console.log`/`core.info` no `github-script`) e o segredo exportado para `$GITHUB_ENV`. **`$GITHUB_OUTPUT` ainda não é apontado** — a propagação é análoga, mas não foi adjudicada em campo, e regra não medida é ruído em potencial.
+- **Propagação de taint por `steps.*.outputs` / `needs.*.outputs`** não é rastreada: se um step captura contexto não-confiável numa saída (`echo "x=${{ github.event.issue.title }}" >> "$GITHUB_OUTPUT"`) e **outro** step depois interpola `${{ steps.id.outputs.x }}` direto no `run:`, só a **linha de origem** é marcada — o segundo uso passa. É troca deliberada: marcar todo `steps.*.outputs`/`needs.*.outputs` no shell geraria falso-positivo demais (a maioria das saídas é de dado confiável). Feche a origem, que é onde o alerta aparece.
 - **`with.args`/`entrypoint` de actions `docker://`** não são inspecionados; os sinks de execução varridos são `run:` e o `script:` do `actions/github-script`.
 - **Cobertura de runner** limita-se a labels literais e `matrix` resolvível estaticamente; um `runs-on` de expressão dinâmica não-resolvível não é classificado.
 - **`curl | bash` com mais de 3 wrappers encadeados** (`sudo env time nice …`) deixa de casar. É troca deliberada: a forma ilimitada do padrão era exponencial em backtracking e uma linha `run:` de 129 caracteres travava a varredura por 7 s (e ~160 caracteres, por horas) — DoS do próprio portão de auditoria.
