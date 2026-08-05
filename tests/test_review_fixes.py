@@ -813,6 +813,30 @@ def test_inline_suppression_is_honored(tmp_path: Path) -> None:
     assert "dangerous-trigger" not in _ids(tmp_path, e)
 
 
+# E3b — `# esteira: ignore[regra]` é ESCOPADA: só cala o `check_id` nomeado. Uma diretiva
+# escrita para OUTRA regra não pode silenciar um achado sem relação na mesma linha (fail-open).
+def test_esteira_scoped_suppression_does_not_leak_to_other_rules(tmp_path: Path) -> None:
+    linha = '      - run: echo "${{ github.event.issue.title }}"'
+    # diretiva escopada para uma regra que NADA tem a ver com o achado da linha
+    marcada = (
+        "on: push\npermissions:\n  contents: read\njobs:\n  b:\n    runs-on: ubuntu-latest\n"
+        "    steps:\n" + linha + "  # esteira: ignore[unpinned-action-thirdparty]\n"
+    )
+    assert "script-injection" in _ids(tmp_path, marcada)  # NÃO pode ser suprimido
+    # a diretiva escopada para a própria regra CALA o achado
+    certa = (
+        "on: push\npermissions:\n  contents: read\njobs:\n  b:\n    runs-on: ubuntu-latest\n"
+        "    steps:\n" + linha + "  # esteira: ignore[script-injection]\n"
+    )
+    assert "script-injection" not in _ids(tmp_path, certa)
+    # lista de regras separada por vírgula também vale
+    lista = (
+        "on: push\npermissions:\n  contents: read\njobs:\n  b:\n    runs-on: ubuntu-latest\n"
+        "    steps:\n" + linha + "  # esteira: ignore[foo, script-injection]\n"
+    )
+    assert "script-injection" not in _ids(tmp_path, lista)
+
+
 # E6 — self-hosted via runner group (transformers usa 'group: amd-mi300-1gpu').
 def test_self_hosted_via_runner_group(tmp_path: Path) -> None:
     wf = textwrap.dedent("""\

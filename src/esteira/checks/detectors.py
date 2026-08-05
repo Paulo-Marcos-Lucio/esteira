@@ -113,6 +113,9 @@ _FIRST_PARTY = {"actions", "github"}
 _SECRET_REF = re.compile(r"\bsecrets\.[A-Za-z_]\w*|\bgithub\.token\b", re.IGNORECASE)
 # Identificador final de um contexto (github.event.issue.title → title) p/ nomear a env var.
 _LAST_IDENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*$")
+# `esteira: ignore[regra-a, regra-b]` — captura a lista de regras da nossa própria diretiva de
+# supressão escopada. A linha já vem em minúsculas quando é consultada.
+_ESTEIRA_IGNORE_SCOPE = re.compile(r"esteira:\s*ignore\s*\[([^\]]*)\]")
 
 
 def run_all(wf: Workflow) -> list[Finding]:
@@ -148,16 +151,32 @@ def run_all(wf: Workflow) -> list[Finding]:
 
 
 def _is_suppressed(wf: Workflow, finding: Finding) -> bool:
-    """Respeita supressão inline '# zizmor: ignore' / '# esteira: ignore' na linha do achado."""
+    """Respeita supressão inline '# zizmor: ignore' / '# esteira: ignore' na linha do achado.
+
+    Três formas, em ordem de precedência:
+
+    - `# esteira: ignore[regra-a, regra-b]` é ESCOPADA: só cala os achados cujo `check_id`
+      está na lista. Sem isso, uma diretiva escrita para uma regra silenciaria em silêncio um
+      achado sem relação na mesma linha (fail-open) — o pior comportamento para um mecanismo de
+      supressão, porque esconde o defeito exatamente onde alguém já estava olhando.
+    - `# esteira: ignore` (sem colchete) marca a linha inteira como revisada e cala qualquer
+      achado nela — é a forma ampla, explícita, para quem revisou o ponto todo.
+    - `# zizmor: ignore[...]` é honrada como "linha revisada pelo mantenedor". O espaço de nomes
+      de regras do zizmor não é o nosso, então não há mapeamento confiável entre `[regra]` deles
+      e o nosso `check_id`; tratamos a marca como declaração de revisão da linha. (Interop
+      deliberada; o escopo por regra vale só para a nossa própria diretiva.)
+    """
     lines = wf.lines
     index = finding.line - 1
     if not 0 <= index < len(lines):
         return False
     lowered = lines[index].lower()
+    escopo = _ESTEIRA_IGNORE_SCOPE.search(lowered)
+    if escopo is not None:
+        regras = {r.strip() for r in escopo.group(1).split(",") if r.strip()}
+        return finding.check_id.lower() in regras
     if "esteira: ignore" in lowered:
         return True
-    # zizmor: ignore[regra] — respeita a supressão (a nossa checagem pode ter outro nome, mas o
-    # mantenedor já declarou aquele ponto como revisado/seguro).
     return "zizmor: ignore" in lowered
 
 
