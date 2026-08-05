@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "esteira"
-version = "0.4.0"
+version = "0.5.0"
 description = "Auditor de segurança de pipelines CI/CD (GitHub Actions) — script injection, actions não-fixadas por SHA, pull_request_target perigoso e permissões excessivas."
 readme = "README.md"
 requires-python = ">=3.10"
