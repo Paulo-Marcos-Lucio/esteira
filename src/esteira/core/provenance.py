@@ -42,8 +42,12 @@ def commit(root: Path | str | None = None) -> str | None:
     Nunca levanta: git ausente, diretório sem ``.git``, repositório sem nenhum commit e binário
     travado (timeout) são todos ``None``. Uma varredura não pode falhar por causa do carimbo.
     """
-    do_ambiente = os.environ.get("ESTEIRA_COMMIT", "").strip()
-    if do_ambiente:
+    # O override do ambiente passa pelo MESMO filtro de 40-hex que o git rev-parse:
+    # um valor malformado (typo, variável errada herdada do CI) não pode contaminar
+    # silenciosamente a proveniência — é justamente o "algo que parece informação" que
+    # o docstring deste módulo diz ser pior que o silêncio. Inválido → cai para o git.
+    do_ambiente = os.environ.get("ESTEIRA_COMMIT", "").strip().lower()
+    if do_ambiente and _SHA_COMPLETO.match(do_ambiente):
         return do_ambiente
     diretorio = Path(root) if root is not None else Path.cwd()
     if diretorio.is_file():
