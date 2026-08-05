@@ -1,6 +1,6 @@
 # Política de Segurança
 
-Reporte vulnerabilidades **de forma privada** para **pmlsp23@gmail.com** (assunto com prefixo `[security]`). Dê um prazo razoável para correção antes de divulgar.
+Reporte vulnerabilidades **de forma privada** para **contatopml26@gmail.com** (assunto com prefixo `[security]`). Dê um prazo razoável para correção antes de divulgar.
 
 ## Escopo
 
