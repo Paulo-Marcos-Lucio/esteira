@@ -1,0 +1,46 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Segunda-feira, 07:17 UTC — desalinhado da hora cheia para não competir com o pico de
+    # agendamentos do GitHub. A varredura semanal pega CVE nova em regra do CodeQL sem novo commit.
+    - cron: "17 7 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analisa (python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["python"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Inicializa o CodeQL
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          languages: ${{ matrix.language }}
+          # 'security-extended' amplia o conjunto de queries além do padrão; Python é
+          # interpretado, então não há passo de build (autobuild dispensado).
+          queries: security-extended
+      - name: Analisa
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          category: "/language:${{ matrix.language }}"

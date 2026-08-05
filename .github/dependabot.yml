@@ -1,16 +1,19 @@
 # Fixar action por SHA sem mecanismo de atualização é congelar a versão vulnerável — pior
 # que a tag, que ao menos recebe a correção do mantenedor. O agrupamento evita enxurrada:
-# um PR por mês por ecossistema.
+# um único PR por semana por ecossistema, mesmo com várias atualizações.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: monthly
+      interval: weekly
     groups:
       actions:
         patterns: ["*"]
   - package-ecosystem: pip
     directory: "/"
     schedule:
-      interval: monthly
+      interval: weekly
+    groups:
+      pip:
+        patterns: ["*"]
