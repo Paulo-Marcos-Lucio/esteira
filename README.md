@@ -232,18 +232,24 @@ cabeçalho ausente — um scanner de segredo deve ter o gatilho mais sensível.
 O Esteira lê os arquivos de workflow do seu repositório (`.github/workflows/*.yml` e os `action.yml` de composite actions), procura os padrões que transformam o CI em porta de entrada e devolve cada achado com número de linha, severidade e correção. O caminho do dado é curto e linear: o **loader** descobre e parseia os workflows; o **motor** roda os detectores — por linha e estruturais — arquivo a arquivo; cada padrão vira um **Finding** que o **catálogo** carimba com severidade e rótulo OWASP/CWE; e os **renderizadores** entregam o resultado em console, JSON ou SARIF. Se um arquivo não parseia, ele não é ignorado em silêncio — vira um achado `invalid-yaml` (fail-closed). Em 20 segundos: entra YAML de pipeline, sai um relatório acionável do que fechar e por quê.
 
 ```mermaid
-flowchart LR
-    IN["Entrada: .github/workflows/*.yml + action.yml"] --> CLI["cli.py · esteira scan"]
-    subgraph MOTOR["checks/engine · motor (arquivo a arquivo, fail-closed)"]
-        LOAD["core/loader · descoberta recursiva + parse YAML"] --> DET["checks/detectors · por linha + estruturais"]
+flowchart TD
+    A["<b>cli.py</b><br/>Typer · esteira scan"] --> ENG["<b>checks/engine.py</b><br/>orquestra a varredura"]
+    ENG --> LOAD["<b>core/loader.py</b><br/>descoberta recursiva<br/>+ parse YAML"]
+    LOAD --> DET["<b>checks/detectors.py</b><br/>estrutural + fallback<br/>por linha · fail-closed"]
+    DET --> CAT["<b>checks/catalog.py</b><br/>16 checagens · severidade<br/>OWASP 2025 · CWE"]
+    CAT --> RED["<b>core/redaction.py</b><br/>mascara credencial<br/>na evidência"]
+    RED --> FND["<b>core/models.py</b><br/>Finding + ScanResult<br/>frozen"]
+    FND --> PRV["<b>core/provenance.py</b><br/>commit · ruleset_hash<br/>artifact_sha256"]
+    PRV --> REP["<b>report/</b><br/>renderização"]
+    REP --> OUT
+    subgraph OUT [" Formatos de saída "]
+        direction LR
+        CON["console · rich"] ~~~ JS["JSON · suite-appsec/1"] ~~~ SA["SARIF 2.1.0"]
     end
-    CLI --> LOAD
-    DET -->|make_finding| FND["core/models · Finding + ScanResult"]
-    CAT["checks/catalog · CheckMeta (16 checagens)"] -.->|"severidade · OWASP 2025 · CWE"| FND
-    FND --> REP["report/ · renderizadores"]
-    REP --> CON["console (rich)"]
-    REP --> JSN["JSON (schema suite-appsec/1)"]
-    REP --> SAR["SARIF 2.1.0 (aba Security)"]
+    classDef nucleo fill:#0e2a24,stroke:#3fb79e,stroke-width:2px,color:#e7ede9;
+    classDef saida fill:#241d0f,stroke:#d6a94e,color:#f5ecd9;
+    class A,ENG,LOAD,DET,CAT,RED,FND,PRV,REP nucleo;
+    class CON,JS,SA saida;
 ```
 
 ```
