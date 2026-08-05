@@ -31,8 +31,14 @@ _CREDENCIAIS = st.one_of(
 
 
 @settings(max_examples=400)
-@given(cred=_CREDENCIAIS, antes=st.text(_ALNUM + " .:/=", max_size=20), depois=st.text(_ALNUM + " .:", max_size=20))
-def test_nenhuma_credencial_conhecida_sobrevive_a_redacao(cred: str, antes: str, depois: str) -> None:
+@given(
+    cred=_CREDENCIAIS,
+    antes=st.text(_ALNUM + " .:/=", max_size=20),
+    depois=st.text(_ALNUM + " .:", max_size=20),
+)
+def test_nenhuma_credencial_conhecida_sobrevive_a_redacao(
+    cred: str, antes: str, depois: str
+) -> None:
     """INVARIANTE: a credencial crua nunca aparece inteira na saída redigida, em qualquer entorno."""
     linha = f"{antes} {cred} {depois}"
     saida = redact(linha) or ""
