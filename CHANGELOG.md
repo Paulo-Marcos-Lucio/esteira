@@ -7,6 +7,15 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **Nova checagem `insecure-commands`** (HIGH · A05:2025 Injection · CWE-94): detecta
+  `ACTIONS_ALLOW_UNSECURE_COMMANDS` definido no `env` do workflow, de um job ou de um step. A variável
+  reativa os comandos de workflow legados `set-env`/`add-path` via stdout (CVE-2020-15228) — com ela ligada,
+  qualquer saída controlada por atacante injeta variável de ambiente ou entrada de PATH e escala para RCE.
+  Fecha um item de paridade que zizmor, octoscan, Checkov e KICS já cobrem. Anomaly-only (um workflow saudável
+  nunca a define), com caso positivo, severidade fixada e linha no README travados pelos meta-testes.
+
+### Adicionado
+
 - **Corpus rotulado em `bench/`** — 17 workflows positivos (19 achados rotulados, cobrindo as 16 de
   16 regras do catálogo) e 5 negativos com 8 linhas-armadilha, com `manifest.json` adjudicado à mão
   e `avaliar.py` que imprime recall/precisão com intervalo de Wilson. Regra da casa: quem altera

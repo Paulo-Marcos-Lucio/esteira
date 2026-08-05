@@ -187,5 +187,12 @@
   "eh_achado": false,
   "regra": null,
   "nota": "armadilha: ${{ matrix.node }} passa por env: — contexto proprio do workflow, nao de terceiro"
+ },
+ {
+  "arquivo": "positivos/insecure-commands.yml",
+  "linha": 10,
+  "eh_achado": true,
+  "regra": "insecure-commands",
+  "nota": "ACTIONS_ALLOW_UNSECURE_COMMANDS reativa set-env/add-path (CVE-2020-15228)"
  }
 ]

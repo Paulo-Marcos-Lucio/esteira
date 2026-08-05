@@ -141,6 +141,7 @@ def run_all(wf: Workflow) -> list[Finding]:
     out += check_self_hosted(wf)
     out += check_script_injection(wf)
     out += check_secret_in_run(wf)
+    out += check_insecure_commands(wf)
     out += check_curl_pipe(wf)
     out += check_unpinned(wf)
     out += check_secret_to_thirdparty(wf)
@@ -204,6 +205,44 @@ def _steps_of(job: dict[str, Any]) -> list[dict[str, Any]]:
 def _env_of(node: Any) -> dict[str, Any]:
     env = node.get("env") if isinstance(node, dict) else None
     return env if isinstance(env, dict) else {}
+
+
+_ENV_FALSY = frozenset({"", "false", "0", "no", "off"})
+
+
+def check_insecure_commands(wf: Workflow) -> list[Finding]:
+    """`ACTIONS_ALLOW_UNSECURE_COMMANDS` reativa os comandos de workflow legados (`set-env`,
+    `add-path` via stdout) — o vetor de CVE-2020-15228. Com ela ligada, qualquer saída que o
+    atacante controle pode injetar variável de ambiente ou entrada de PATH e escalar para RCE.
+
+    Anomaly-only: só dispara quando a variável está presente e com valor não-falso, no `env`
+    do workflow, de um job ou de um step. Um workflow saudável nunca a define.
+    """
+    data = wf.data
+    escopos: list[dict[str, Any]] = [_env_of(data)]
+    for job in _jobs(data):
+        escopos.append(_env_of(job))
+        for step in _steps_of(job):
+            escopos.append(_env_of(step))
+    presente = any(
+        str(chave).strip().upper() == "ACTIONS_ALLOW_UNSECURE_COMMANDS"
+        and str(valor).strip().lower() not in _ENV_FALSY
+        for env in escopos
+        for chave, valor in env.items()
+    )
+    if not presente:
+        return []
+    at = wf.find_line("ACTIONS_ALLOW_UNSECURE_COMMANDS")
+    return [
+        make_finding(
+            "insecure-commands",
+            wf.path,
+            at,
+            "O workflow define ACTIONS_ALLOW_UNSECURE_COMMANDS, que reativa os comandos "
+            "inseguros 'set-env'/'add-path' (CVE-2020-15228) e abre injeção de ambiente/PATH.",
+            evidence="ACTIONS_ALLOW_UNSECURE_COMMANDS",
+        )
+    ]
 
 
 def _step_contexts(data: dict[str, Any] | None) -> list[tuple[dict[str, Any], dict[str, Any]]]:
