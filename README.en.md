@@ -13,13 +13,13 @@
 
 [![CI](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml/badge.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/codeql.yml/badge.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/codeql.yml)
-[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Ruff](https://img.shields.io/badge/lint-ruff-261230.svg)](https://github.com/astral-sh/ruff)
-[![Checked with mypy](https://img.shields.io/badge/mypy-strict-2A6DB2.svg)](https://mypy-lang.org/)
-[![tests](https://img.shields.io/badge/tests-249%20passing-brightgreen.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
-[![coverage](https://img.shields.io/badge/coverage-96%25-green.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
-[![OWASP](https://img.shields.io/badge/OWASP-Top%2010%3A2025-000000.svg)](https://owasp.org/Top10/)
+[![Python 3.10 | 3.11 | 3.12](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-python.svg)](https://www.python.org/)
+[![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
+[![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
+[![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
+[![249 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
 </div>
 

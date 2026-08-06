@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 147 32" width="147" height="32" role="img" aria-label="MYPY STRICT">
+  <title>MYPY STRICT</title>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.07"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="h" cx="0.15" cy="0.5" r="0.9">
+      <stop offset="0" stop-color="#5a93d8" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#5a93d8" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="c"><rect x="0.5" y="0.5" width="146" height="31" rx="8"/></clipPath>
+  </defs>
+  <rect x="0.5" y="0.5" width="146" height="31" rx="8" fill="#0f141b" stroke="#2A6DB2" stroke-opacity="0.55" stroke-width="1"/>
+  <g clip-path="url(#c)">
+    <rect x="0" y="0" width="147" height="32" fill="url(#h)"/>
+    <rect x="0.5" y="0.5" width="146" height="16" fill="url(#g)"/>
+  </g>
+  <rect x="0" y="0" width="3" height="32" fill="#2A6DB2" clip-path="url(#c)"/>
+  <text x="15" y="21" text-anchor="middle" font-size="14">🔍</text>
+  <text x="36" y="20.5" font-family="'JetBrains Mono','Cascadia Code',ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="12.5" font-weight="700" letter-spacing="0.2" fill="#f4f4f4">MYPY STRICT</text>
+</svg>
