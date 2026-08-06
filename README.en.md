@@ -229,8 +229,8 @@ missing header — a secrets scanner should have the more sensitive trigger.
 
 <div align="center">
 
-[![Packages and pricing](https://img.shields.io/badge/Pacotes_e_valores-paulo--marcos--lucio.github.io-0f766e?style=for-the-badge)](https://paulo-marcos-lucio.github.io)
-[![Talk on LinkedIn](https://img.shields.io/badge/LinkedIn-Falar_agora-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/paulo-marcos-a07379174/)
+[![Packages and pricing](https://img.shields.io/badge/Packages_and_pricing-paulo--marcos--lucio.github.io-0f766e?style=for-the-badge)](https://paulo-marcos-lucio.github.io)
+[![Talk on LinkedIn](https://img.shields.io/badge/LinkedIn-Talk_now-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/paulo-marcos-a07379174/)
 
 </div>
 
