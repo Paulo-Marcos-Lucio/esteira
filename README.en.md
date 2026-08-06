@@ -1,4 +1,4 @@
-<p align="center"><a href="README.md"><img src="https://img.shields.io/badge/🇧🇷-LER_EM_PORTUGUES-009739?style=for-the-badge&labelColor=002776" alt="Ler este documento em Português"/></a></p>
+<p align="center"><a href="README.md"><img src="https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/btn-lang-pt.svg" alt="Ler este documento em Português" width="300"/></a></p>
 
 <a href="https://paulo-marcos-lucio.github.io"><img src="https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/banner-abismo-v2.svg" alt="Esteira — the current that inspects the flow of your CI/CD: GitHub Actions security auditor" width="100%"/></a>
 

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 56" width="300" height="56" role="img" aria-label="Read this document in English">
+  <title>Read in English</title>
+  <defs>
+    <linearGradient id="flagGlow" x1="0" y1="0" x2="300" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3c3b6e" stop-opacity="0.35"/>
+      <stop offset="0.5" stop-color="#3c3b6e" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#b22234" stop-opacity="0"/>
+      <stop offset="1" stop-color="#b22234" stop-opacity="0.35"/>
+    </linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="clip"><rect x="0.5" y="0.5" width="299" height="55" rx="14"/></clipPath>
+    <clipPath id="flagClip"><rect x="0" y="0" width="28" height="28" rx="4"/></clipPath>
+  </defs>
+
+  <!-- painel: fundo escuro com um sopro de azul->vermelho da bandeira nas pontas, borda mais viva que os botoes de nav padrao (este e para chamar atencao, nao para ser discreto) -->
+  <rect x="0.5" y="0.5" width="299" height="55" rx="14" fill="#0f141b" stroke="#3a4452" stroke-width="1.5"/>
+  <g clip-path="url(#clip)">
+    <rect x="0.5" y="0.5" width="299" height="55" fill="url(#flagGlow)"/>
+    <rect x="0.5" y="0.5" width="299" height="26" fill="url(#top)"/>
+  </g>
+  <rect x="1.5" y="1.5" width="297" height="53" rx="13" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+
+  <!-- icone: bandeira dos EUA simplificada, 28x28, grade em x=14 y=14 -->
+  <g transform="translate(14,14)">
+    <g clip-path="url(#flagClip)">
+      <rect x="0" y="0" width="28" height="28" fill="#f4f4f4"/>
+      <rect x="0" y="0" width="28" height="4" fill="#b22234"/>
+      <rect x="0" y="8" width="28" height="4" fill="#b22234"/>
+      <rect x="0" y="16" width="28" height="4" fill="#b22234"/>
+      <rect x="0" y="24" width="28" height="4" fill="#b22234"/>
+      <rect x="0" y="0" width="13" height="16" fill="#3c3b6e"/>
+    </g>
+    <rect x="0.5" y="0.5" width="27" height="27" rx="4" fill="none" stroke="#00000022" stroke-width="1"/>
+  </g>
+
+  <!-- copy: grande, chamativo, preenche o resto do botao -->
+  <text x="172" y="34" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="17" font-weight="800" letter-spacing="0.5" fill="#f4f4f4">READ IN ENGLISH</text>
+  <text x="172" y="47" text-anchor="middle" font-family="'JetBrains Mono','Cascadia Code',ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="9.5" font-weight="600" letter-spacing="1.5" fill="#8b96a3">CLIQUE AQUI · CLICK HERE</text>
+</svg>
