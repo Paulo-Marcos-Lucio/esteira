@@ -1,3 +1,5 @@
+<p align="right"><a href="README.en.md">🇺🇸 Read in English</a></p>
+
 <a href="https://paulo-marcos-lucio.github.io"><img src="https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/banner-abismo-v2.svg" alt="Esteira — a correnteza que inspeciona o fluxo do seu CI/CD: auditor de segurança de GitHub Actions" width="100%"/></a>
 
 <div align="center">
