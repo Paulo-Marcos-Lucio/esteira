@@ -1,3 +1,5 @@
+<p align="center"><a href="SECURITY.en.md"><img src="https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/btn-lang-en.svg" alt="Read this document in English" width="300"/></a></p>
+
 # Política de Segurança
 
 Reporte vulnerabilidades **de forma privada** para **contatopml26@gmail.com** (assunto com prefixo `[security]`). Dê um prazo razoável para correção antes de divulgar.
