@@ -1,0 +1,101 @@
+name: Dependências em dia
+
+# Mescla PR de dependência que já está verde, uma vez por dia.
+#
+# Por que um job agendado em vez do automerge nativo do GitHub: o automerge
+# nativo só espera pelos *required status checks* de uma regra de proteção de
+# branch. Sem proteção configurada — que é o caso aqui — ele mescla na hora,
+# antes de qualquer teste rodar. Este job faz o contrário: só mescla o que já
+# terminou e terminou verde.
+#
+# Atualização de MAJOR nunca é mesclada sozinha. Major muda contrato; quem
+# decide é gente.
+
+on:
+  schedule:
+    - cron: "13 12 * * *"   # 09:13 em São Paulo
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dependencias-em-dia
+  cancel-in-progress: false
+
+jobs:
+  mesclar-o-que-esta-verde:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Avaliar e mesclar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          ABERTOS=$(gh pr list -R "$REPO" --state open --author "app/dependabot" \
+                      --json number,title,headRefOid --jq '.[] | @base64')
+
+          if [ -z "$ABERTOS" ]; then
+            echo "nenhum PR de dependência aberto"
+            exit 0
+          fi
+
+          for LINHA in $ABERTOS; do
+            PR=$(echo "$LINHA" | base64 -d)
+            NUMERO=$(echo "$PR" | jq -r .number)
+            TITULO=$(echo "$PR" | jq -r .title)
+            SHA=$(echo "$PR" | jq -r .headRefOid)
+
+            echo "::group::PR #${NUMERO} — ${TITULO}"
+
+            # Major bump: fora do escopo da automação.
+            if echo "$TITULO" | grep -qiE 'from ([0-9]+)\.[0-9.]+ to ([0-9]+)\.' ; then
+              DE=$(echo "$TITULO" | sed -nE 's/.* from ([0-9]+)\..*/\1/p')
+              PARA=$(echo "$TITULO" | sed -nE 's/.* to ([0-9]+)\..*/\1/p')
+              if [ -n "$DE" ] && [ -n "$PARA" ] && [ "$DE" != "$PARA" ]; then
+                echo "major ${DE} -> ${PARA}: deixando para revisão humana"
+                echo "::endgroup::"
+                continue
+              fi
+            fi
+
+            ESTADOS=$(gh api "repos/${REPO}/commits/${SHA}/check-runs" \
+                        --jq '[.check_runs[] | select(.status=="completed") | .conclusion] | join(" ")')
+            PENDENTES=$(gh api "repos/${REPO}/commits/${SHA}/check-runs" \
+                        --jq '[.check_runs[] | select(.status!="completed")] | length')
+
+            if [ "$PENDENTES" != "0" ]; then
+              echo "ainda há ${PENDENTES} check(s) rodando — fica para amanhã"
+              echo "::endgroup::"
+              continue
+            fi
+
+            if [ -z "$ESTADOS" ]; then
+              echo "nenhum check registrado — não mescla no escuro"
+              echo "::endgroup::"
+              continue
+            fi
+
+            RUIM=0
+            for E in $ESTADOS; do
+              case "$E" in
+                success|neutral|skipped) ;;
+                *) echo "check com conclusão '${E}'"; RUIM=1 ;;
+              esac
+            done
+
+            if [ "$RUIM" = "1" ]; then
+              echo "há check vermelho — não mescla"
+              echo "::endgroup::"
+              continue
+            fi
+
+            echo "todos os checks verdes; mesclando"
+            gh pr merge "$NUMERO" -R "$REPO" --squash --delete-branch
+            echo "::endgroup::"
+          done
