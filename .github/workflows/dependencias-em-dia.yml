@@ -8,8 +8,11 @@ name: Dependências em dia
 # antes de qualquer teste rodar. Este job faz o contrário: só mescla o que já
 # terminou e terminou verde.
 #
-# Atualização de MAJOR nunca é mesclada sozinha. Major muda contrato; quem
-# decide é gente.
+# E ele é fail-closed quanto a major: não basta "não parecer major", precisa
+# ser *provadamente* não-major. Se a classificação não sair do diff com
+# certeza, o PR fica para revisão humana. A primeira versão deste job
+# classificava pelo título, e um PR agrupado ("Bump the pip group with 2
+# updates") não tem versão no título — um major passaria batido.
 
 on:
   schedule:
@@ -27,9 +30,17 @@ concurrency:
 jobs:
   mesclar-o-que-esta-verde:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
+      - uses: actions/checkout@v5
+
+      - name: O classificador está correto?
+        # Antes de deixar um script decidir merge sozinho, ele prova que ainda
+        # classifica certo. Se este passo falha, o job inteiro falha e nada é
+        # mesclado — fail-closed também quanto à própria ferramenta.
+        run: python3 .github/scripts/test_classificar_bump.py
+
       - name: Avaliar e mesclar
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -37,65 +48,58 @@ jobs:
         run: |
           set -euo pipefail
 
-          ABERTOS=$(gh pr list -R "$REPO" --state open --author "app/dependabot" \
-                      --json number,title,headRefOid --jq '.[] | @base64')
+          NUMEROS=$(gh pr list -R "$REPO" --state open --author "app/dependabot" \
+                      --json number --jq '.[].number')
 
-          if [ -z "$ABERTOS" ]; then
+          if [ -z "$NUMEROS" ]; then
             echo "nenhum PR de dependência aberto"
             exit 0
           fi
 
-          for LINHA in $ABERTOS; do
-            PR=$(echo "$LINHA" | base64 -d)
-            NUMERO=$(echo "$PR" | jq -r .number)
-            TITULO=$(echo "$PR" | jq -r .title)
-            SHA=$(echo "$PR" | jq -r .headRefOid)
+          for NUMERO in $NUMEROS; do
+            echo "::group::PR #${NUMERO}"
 
-            echo "::group::PR #${NUMERO} — ${TITULO}"
+            SHA=$(gh pr view "$NUMERO" -R "$REPO" --json headRefOid --jq .headRefOid)
 
-            # Major bump: fora do escopo da automação.
-            if echo "$TITULO" | grep -qiE 'from ([0-9]+)\.[0-9.]+ to ([0-9]+)\.' ; then
-              DE=$(echo "$TITULO" | sed -nE 's/.* from ([0-9]+)\..*/\1/p')
-              PARA=$(echo "$TITULO" | sed -nE 's/.* to ([0-9]+)\..*/\1/p')
-              if [ -n "$DE" ] && [ -n "$PARA" ] && [ "$DE" != "$PARA" ]; then
-                echo "major ${DE} -> ${PARA}: deixando para revisão humana"
-                echo "::endgroup::"
-                continue
-              fi
-            fi
-
-            ESTADOS=$(gh api "repos/${REPO}/commits/${SHA}/check-runs" \
-                        --jq '[.check_runs[] | select(.status=="completed") | .conclusion] | join(" ")')
+            # --- 1. os checks terminaram? ---
             PENDENTES=$(gh api "repos/${REPO}/commits/${SHA}/check-runs" \
-                        --jq '[.check_runs[] | select(.status!="completed")] | length')
-
+                          --jq '[.check_runs[] | select(.status!="completed")] | length')
             if [ "$PENDENTES" != "0" ]; then
               echo "ainda há ${PENDENTES} check(s) rodando — fica para amanhã"
               echo "::endgroup::"
               continue
             fi
 
+            ESTADOS=$(gh api "repos/${REPO}/commits/${SHA}/check-runs" \
+                        --jq '[.check_runs[] | .conclusion] | join(" ")')
             if [ -z "$ESTADOS" ]; then
               echo "nenhum check registrado — não mescla no escuro"
               echo "::endgroup::"
               continue
             fi
 
-            RUIM=0
+            VERDE=1
             for E in $ESTADOS; do
               case "$E" in
                 success|neutral|skipped) ;;
-                *) echo "check com conclusão '${E}'"; RUIM=1 ;;
+                *) echo "check com conclusão '${E}'"; VERDE=0 ;;
               esac
             done
-
-            if [ "$RUIM" = "1" ]; then
+            if [ "$VERDE" = "0" ]; then
               echo "há check vermelho — não mescla"
               echo "::endgroup::"
               continue
             fi
 
-            echo "todos os checks verdes; mesclando"
-            gh pr merge "$NUMERO" -R "$REPO" --squash --delete-branch
+            # --- 2. dá para PROVAR que não é major? ---
+            gh pr diff "$NUMERO" -R "$REPO" > /tmp/pr.diff || true
+
+            if python3 .github/scripts/classificar_bump.py /tmp/pr.diff; then
+              echo "não-major comprovado e checks verdes; mesclando"
+              gh pr merge "$NUMERO" -R "$REPO" --squash --delete-branch
+            else
+              echo "não foi possível provar que é não-major — fica para revisão humana"
+            fi
+
             echo "::endgroup::"
           done
