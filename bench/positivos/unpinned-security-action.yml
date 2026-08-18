@@ -1,0 +1,11 @@
+name: scanner-por-tag
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aquasecurity/trivy-action@0.24.0

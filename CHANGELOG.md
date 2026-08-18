@@ -3,6 +3,25 @@
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Nova checagem `unpinned-security-action`** (CRITICAL · A03:2025 Software Supply Chain
+  Failures · CWE-1357): uma action de segurança (CodeQL, Trivy, Gitleaks, Semgrep, KICS…) fixada
+  por tag móvel, não por SHA, sai de `unpinned-action-thirdparty`/`unpinned-action-firstparty`
+  (HIGH/LOW) para uma severidade dedicada acima da genérica de terceiros. A tag comprometida
+  nessa categoria não é supply-chain qualquer: é o próprio scanner do pipeline sendo trocado —
+  silencia achado real ou exfiltra segredo do job, que roda com mais permissão que o resto do CI.
+  A checagem precede a distinção primeira/terceira parte: `github/codeql-action` continua sendo
+  ferramenta de segurança mesmo sendo `github/*`. Caso positivo, severidade e linha no README
+  travados pelos meta-testes de `test_catalogo.py`.
+  Regra da casa: bateria de `bench/` antes e depois. Antes (corpus de 17 arquivos/19 achados,
+  medição de 2026-08-04): **19/19 recall (IC95% [83% ; 100%]), 0 falso-positivo, precisão 100%**.
+  Depois (corpus de 19 arquivos/21 achados, com o caso novo de `trivy-action` não fixada):
+  **21/21 recall (IC95% [85% ; 100%]), 0 falso-positivo, precisão 100%**, cobertura 18/18 regras
+  do catálogo.
+
 ## [0.5.0] — 2026-08-05
 
 ### Adicionado
