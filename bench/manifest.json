@@ -28,6 +28,13 @@
   "nota": "docker/login-action fixada por tag movivel"
  },
  {
+  "arquivo": "positivos/unpinned-security-action.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "unpinned-security-action",
+  "nota": "trivy-action (scanner de seguranca) fixada por tag movivel"
+ },
+ {
   "arquivo": "positivos/broad-permissions.yml",
   "linha": 5,
   "eh_achado": true,
