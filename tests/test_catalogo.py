@@ -37,6 +37,12 @@ CASOS_POSITIVOS: dict[str, str] = {
         "        with:\n          ref: ${{ github.head_ref }}\n",
         trigger="pull_request_target",
     ),
+    "ai-agent-write-injection": _steps(
+        "    steps:\n      - uses: anthropics/claude-code-action@v1\n"
+        "        with:\n          prompt: ${{ github.event.comment.body }}\n",
+        trigger="issue_comment",
+        permissions="permissions:\n  contents: write\n  pull-requests: write\n",
+    ),
     "unpinned-action-thirdparty": _steps("    steps:\n      - uses: some-org/evil-action@v1\n"),
     "unpinned-action-firstparty": _steps("    steps:\n      - uses: actions/checkout@v4\n"),
     "unpinned-reusable-workflow": (
@@ -107,6 +113,7 @@ def test_caso_positivo_realmente_dispara(tmp_path: Path, check_id: str) -> None:
 SEVERIDADES: dict[str, Severity] = {
     "script-injection": Severity.CRITICAL,
     "pull-request-target-checkout": Severity.CRITICAL,
+    "ai-agent-write-injection": Severity.HIGH,
     "unpinned-action-thirdparty": Severity.HIGH,
     "secret-to-thirdparty-action": Severity.HIGH,
     "broad-permissions": Severity.HIGH,

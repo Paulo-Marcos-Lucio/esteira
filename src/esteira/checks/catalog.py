@@ -50,6 +50,18 @@ CATALOG: dict[str, CheckMeta] = {
             "CWE-94",
         ),
         CheckMeta(
+            "ai-agent-write-injection",
+            "Corpo de issue/comentário/PR entregue a agente de IA com permissão de escrita",
+            Severity.HIGH,
+            "Rode o job do agente com o mínimo de permissão (idealmente 'contents: read', sem "
+            "'pull-requests: write'/'issues: write'). Se o agente precisa comentar ou abrir PR, "
+            "isole essa escrita num job separado, chamado só depois de um portão que valide a "
+            "saída do agente — nunca deixe o mesmo token que lê o texto não-confiável já valendo "
+            "para escrever no repositório.",
+            "A05:2025 Injection",
+            "CWE-1427",
+        ),
+        CheckMeta(
             "unpinned-action-thirdparty",
             "Action de terceiros não fixada por SHA",
             Severity.HIGH,
