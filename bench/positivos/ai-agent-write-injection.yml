@@ -1,0 +1,14 @@
+name: agente-de-triagem
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  triagem:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anthropics/claude-code-action@ec1f45c2b9c1abee19b3ea3234c8a1c8fda78e94 # v1
+        with:
+          prompt: ${{ github.event.comment.body }}

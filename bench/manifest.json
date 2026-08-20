@@ -21,6 +21,20 @@
   "nota": "co-ocorrencia legitima: o gatilho privilegiado existe mesmo neste arquivo"
  },
  {
+  "arquivo": "positivos/ai-agent-write-injection.yml",
+  "linha": 12,
+  "eh_achado": true,
+  "regra": "ai-agent-write-injection",
+  "nota": "comment.body vira prompt do agente, job com contents/pull-requests write"
+ },
+ {
+  "arquivo": "positivos/ai-agent-write-injection.yml",
+  "linha": 3,
+  "eh_achado": true,
+  "regra": "dangerous-trigger",
+  "nota": "co-ocorrencia legitima: issue_comment e o gatilho privilegiado que expoe o comentario"
+ },
+ {
   "arquivo": "positivos/unpinned-thirdparty.yml",
   "linha": 11,
   "eh_achado": true,
@@ -187,6 +201,13 @@
   "eh_achado": false,
   "regra": null,
   "nota": "armadilha: ${{ matrix.node }} passa por env: — contexto proprio do workflow, nao de terceiro"
+ },
+ {
+  "arquivo": "negativos/agente-de-ia-somente-leitura.yml",
+  "linha": 13,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: mesmo agente e mesmo corpo nao-confiavel do caso positivo, mas job so com contents: read — sem escrita para abusar"
  },
  {
   "arquivo": "positivos/insecure-commands.yml",

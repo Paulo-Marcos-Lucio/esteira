@@ -1,0 +1,15 @@
+name: agente-de-resumo
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+jobs:
+  resume:
+    runs-on: ubuntu-latest
+    steps:
+      # armadilha: mesmo agente, mesmo corpo nao-confiavel, mas SEM escrita — o pior que uma
+      # instrucao escondida consegue e um comentario de resumo que ninguem le como se fosse dele
+      - uses: anthropics/claude-code-action@ec1f45c2b9c1abee19b3ea3234c8a1c8fda78e94 # v1
+        with:
+          prompt: ${{ github.event.issue.body }}
