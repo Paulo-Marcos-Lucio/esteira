@@ -12,9 +12,13 @@ o vazamento chegar num laudo.
 
 from __future__ import annotations
 
+import yaml
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from esteira.checks import profiles
+from esteira.checks.detectors import run_all
+from esteira.core.models import Profile, Severity, Workflow
 from esteira.core.redaction import mask, redact
 
 _ALNUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -66,3 +70,60 @@ def test_mask_expoe_no_maximo_as_pontas(valor: str) -> None:
     # um segredo longo jamais aparece inteiro na forma mascarada
     if len(valor) > 2 * keep + 4:
         assert valor not in m, f"valor inteiro sobreviveu à máscara: {valor!r} -> {m!r}"
+
+
+# --------------------------------------------------------------------------- #
+# Perfis de severidade (EST-06): a severidade de um achado ajustado depende SÓ
+# do perfil escolhido — nunca do resto do conteúdo do workflow (nome do job,
+# do step, ou do comando rodado). O nome do job/step entra livre no YAML, e a
+# invariante não pode quebrar por causa disso.
+# --------------------------------------------------------------------------- #
+
+_NOMES = st.text(
+    alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="_-"),
+    min_size=1,
+    max_size=12,
+)
+_COMANDOS = st.text(alphabet="abcdefghijklmnopqrstuvwxyz ", min_size=1, max_size=20)
+
+
+def _wf_self_hosted(job_nome: str, step_nome: str, comando: str) -> Workflow:
+    data = {
+        "name": "wf",
+        "on": "push",
+        "permissions": {"contents": "read"},
+        "jobs": {
+            job_nome: {
+                "runs-on": "self-hosted",
+                "steps": [{"name": step_nome, "run": f"echo {comando}"}],
+            }
+        },
+    }
+    return Workflow(path="wf.yml", text=yaml.safe_dump(data), data=data)
+
+
+@settings(max_examples=150)
+@given(job_nome=_NOMES, step_nome=_NOMES, comando=_COMANDOS)
+def test_severidade_self_hosted_e_funcao_so_do_perfil(
+    job_nome: str, step_nome: str, comando: str
+) -> None:
+    """INVARIANTE: para QUALQUER nome de job/step e comando, 'self-hosted-runner' sai
+    MEDIUM sem perfil, CRITICAL no oss-publico e LOW no interno — sempre com justificativa
+    quando ajustado, nunca com justificativa quando não ajustado."""
+    achados = run_all(_wf_self_hosted(job_nome, step_nome, comando))
+
+    def severidade(perfil: Profile | None):  # type: ignore[no-untyped-def]
+        ajustados = profiles.apply(achados, perfil)
+        return next(f for f in ajustados if f.check_id == "self-hosted-runner")
+
+    sem_perfil = severidade(None)
+    assert sem_perfil.severity is Severity.MEDIUM
+    assert sem_perfil.severity_note is None
+
+    oss = severidade(Profile.OSS_PUBLICO)
+    assert oss.severity is Severity.CRITICAL
+    assert oss.severity_note is not None
+
+    interno = severidade(Profile.INTERNO)
+    assert interno.severity is Severity.LOW
+    assert interno.severity_note is not None

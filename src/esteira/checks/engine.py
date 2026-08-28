@@ -6,10 +6,11 @@ import os
 from collections.abc import Iterable
 from pathlib import Path
 
+from esteira.checks import profiles
 from esteira.checks.catalog import make_finding
 from esteira.checks.detectors import run_all
 from esteira.core.loader import iter_workflow_files, load
-from esteira.core.models import Finding, ScanResult
+from esteira.core.models import Finding, Profile, ScanResult
 
 
 def _display_path(path: Path, base: Path) -> str:
@@ -53,6 +54,7 @@ def scan(
     *,
     only: Iterable[str] | None = None,
     skip: Iterable[str] | None = None,
+    profile: Profile | None = None,
 ) -> ScanResult:
     only_set = set(only) if only else None
     skip_set = set(skip) if skip else set()
@@ -68,4 +70,5 @@ def scan(
             if finding.check_id in skip_set:
                 continue
             findings.append(finding)
-    return ScanResult(findings=findings, files_scanned=len(files), root=str(base))
+    findings = profiles.apply(findings, profile)
+    return ScanResult(findings=findings, files_scanned=len(files), root=str(base), profile=profile)
