@@ -55,6 +55,17 @@ _UNTRUSTED = (
 _UNTRUSTED_RE = (
     re.compile(r"github\.event\.commits.*?\.(?:message|author|committer)"),
     re.compile(r"(?:github\.event\.inputs|(?<![\w.])inputs)\.[\w-]+"),
+    # workflow_run carrega o PR associado; `pull_requests[i].head.ref`/`.head.label` é o nome da
+    # branch do fork (texto livre do atacante), mesma classe de `github.head_ref`.
+    re.compile(r"github\.event\.workflow_run\.pull_requests\[[0-9]+\]\.head\.(?:ref|label)"),
+)
+# `toJSON(...)` de um OBJETO do evento serializa os campos de texto livre que ele contém (título,
+# corpo, mensagem de commit) — que, dentro de aspas no shell, quebram a string com um `'`/`"`. O
+# objeto inteiro (github / github.event) e os subobjetos abaixo são não-confiáveis; um escalar
+# seguro como `toJSON(github.event.pull_request.number)` NÃO casa, de propósito.
+_TOJSON_UNTRUSTED = re.compile(
+    r"tojson\(\s*github(?:\.event(?:\.(?:issue|pull_request|comment|review|review_comment"
+    r"|discussion|head_commit|commits|workflow_run|pages|sender))?)?\s*\)"
 )
 
 # Conteúdo de ${{ }}. As alternativas são disjuntas pelo 1º caractere (', ", {, }, resto),
@@ -85,24 +96,69 @@ _LEAD_CMD = r"(?:^|[\n;&|`(])\s*"
 # O limite cobre o uso real (até 3 wrappers encadeados, cada um com até 3 argumentos
 # próprios); quem encadear mais que isso deixa de ser detectado — troca deliberada.
 _WRAPPERS = r"(?:(?:sudo|env|command|time|nice|nohup|xargs|timeout|stdbuf)(?:\s+\S+){0,3}?\s+){0,3}"
+# Interpretadores que executam o que recebem da rede: shells POSIX e também os runtimes
+# script (python/node/ruby/perl) usados por instaladores reais (Poetry, nvm). `python3` antes
+# de `python` porque `python\b` não casaria o `3`.
+_INTERP = r"(?:bash|zsh|dash|sh|python3|python|nodejs|node|ruby|perl)"
+_CURL = r"(?:curl|wget)"
+# 1) Forma clássica com pipe: `curl … | bash` (ou | python3 -, | ruby, …), em posição de comando.
 _CURL_PIPE = re.compile(
-    _LEAD_CMD + _WRAPPERS + r"(?:curl|wget)\b[^\n]*\|&?\s*"
-    r"" + _WRAPPERS + r"(?:/\S*/)?(?:bash|sh|zsh|dash)\b"
+    _LEAD_CMD + _WRAPPERS + _CURL + r"\b[^\n]*\|&?\s*" + _WRAPPERS + r"(?:/\S*/)?" + _INTERP + r"\b"
 )
-# ref/repository de checkout que aponta para o código não-confiável do PR (não a base).
-_PR_REF = re.compile(
-    r"refs/pull/|github\.head_ref"
-    r"|github\.event\.pull_request\.(?:head|number|merge_commit_sha)\b",
+# 2) Substituição de processo: `bash <(curl …)` — idioma do codecov, sem pipe mas mesmo efeito.
+_CURL_PROCSUBST = re.compile(_INTERP + r"\b[^\n]*<\(\s*" + _WRAPPERS + _CURL + r"\b")
+# 3) Substituição de comando: `sh -c "$(curl …)"` / `bash -c \`curl …\`` (Homebrew/oh-my-zsh).
+_CURL_CMDSUBST = re.compile(_INTERP + r"\b[^\n]*\s-c\b[^\n]*(?:\$\(|`)[^\n]*" + _CURL + r"\b")
+# 4) Equivalente PowerShell: `iwr … | iex` / `Invoke-WebRequest … | Invoke-Expression` (Chocolatey).
+_IWR_IEX = re.compile(
+    r"(?:iwr|irm|curl|wget|invoke-webrequest|invoke-restmethod)\b[^\n]*\|[^\n]*"
+    r"\b(?:iex|invoke-expression)\b",
     re.IGNORECASE,
 )
-_FORK_REPO = re.compile(r"github\.event\.pull_request\.head\.repo|github\.head_ref", re.IGNORECASE)
-# Checkout do código do PR via shell sob pull_request_target (base.ref confiável NÃO casa).
+
+
+def _curl_pipe_hit(text: str) -> bool:
+    """Download da rede executado direto por um interpretador, em qualquer das variantes reais:
+    pipe (`curl|bash`), substituição de processo (`bash <(curl)`), de comando (`sh -c "$(curl)"`)
+    ou o par PowerShell `iwr|iex`. Todas equivalem a rodar código não verificado da rede (CWE-494)."""
+    return bool(
+        _CURL_PIPE.search(text)
+        or _CURL_PROCSUBST.search(text)
+        or _CURL_CMDSUBST.search(text)
+        or _IWR_IEX.search(text)
+    )
+
+
+# ref/repository de checkout que aponta para o código não-confiável do PR (não a base). Cobre
+# o pull_request_target (head/number/merge_commit_sha) E o workflow_run, que tem os MESMOS
+# privilégios e carrega o head do fork por outro caminho (head_sha/head_branch/pull_requests).
+_PR_REF = re.compile(
+    r"refs/pull/|github\.head_ref"
+    r"|github\.event\.pull_request\.(?:head|number|merge_commit_sha)\b"
+    r"|github\.event\.workflow_run\.(?:head_sha|head_branch)\b"
+    r"|github\.event\.workflow_run\.pull_requests\b",
+    re.IGNORECASE,
+)
+_FORK_REPO = re.compile(
+    r"github\.event\.pull_request\.head\.repo"
+    r"|github\.event\.workflow_run\.head_repository"
+    r"|github\.head_ref",
+    re.IGNORECASE,
+)
+# Checkout do código do PR via shell sob gatilho privilegiado (base.ref confiável NÃO casa).
+# `git clone` do fork entra pela resolução de variável de ambiente (ver `_ppt_step_finding`),
+# porque o repo/ref costumam chegar por `$REF`/`$REPO` vindos de um bloco `env:`.
 _PR_CHECKOUT_RUN = re.compile(
     r"gh\s+pr\s+checkout"
     r"|git\s+fetch\b[^\n]*\bpull/\S+/(?:head|merge)"
     r"|git\s+fetch\b[^\n]*github\.event\.pull_request\.(?:head|number|merge_commit_sha)\b",
     re.IGNORECASE,
 )
+# `git clone`/`git fetch`/`git checkout` de um repositório/ref — o alvo (confiável ou fork) é
+# decidido à parte, casando `_PR_REF`/`_FORK_REPO` na linha já com as variáveis de env expandidas.
+_GIT_FETCH_CODE = re.compile(r"git\s+(?:clone|fetch|checkout|pull)\b", re.IGNORECASE)
+# Referência a variável de shell (`$REF`, `${REPO}`) — para expandir a partir do `env:` do step.
+_SHELL_VAR = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
 _MATRIX_REF = re.compile(r"matrix\.([A-Za-z_][A-Za-z0-9_-]*)")
 # uses:@ref para o modo de fallback (flow-style: o ref não pode capturar } ] ,).
 _USES_LINE = re.compile(r"""uses:\s*['"]?([^'"\s@]+)@([^'"\s}\],]+)""")
@@ -230,6 +286,19 @@ def check_insecure_commands(wf: Workflow) -> list[Finding]:
         for env in escopos
         for chave, valor in env.items()
     )
+    # Forma histórica (2020) de reativar os comandos legados sem tocar em `env:`: exportar a var
+    # em runtime pelo arquivo $GITHUB_ENV (`echo "ACTIONS_ALLOW_UNSECURE_COMMANDS=true" >> $GITHUB_ENV`).
+    # Ler só os mapas `env:` deixava esse vetor passar — a var acaba igualmente no ambiente do job.
+    if not presente:
+        presente = any(
+            which == "ENV"
+            and name == "actions_allow_unsecure_commands"
+            and str(value).strip().lower() not in _ENV_FALSY
+            for step, _env in _step_contexts(data)
+            if isinstance(step.get("run"), str)
+            for line in step["run"].splitlines()
+            for which, name, value in _github_file_assignments(line)
+        )
     if not presente:
         return []
     at = wf.find_line("ACTIONS_ALLOW_UNSECURE_COMMANDS")
@@ -308,6 +377,9 @@ def _untrusted_hit(text: str) -> str | None:
         match = regex.search(normalized)
         if match is not None:
             return match.group(0)
+    tojson = _TOJSON_UNTRUSTED.search(normalized)
+    if tojson is not None:
+        return tojson.group(0)
     return None
 
 
@@ -379,22 +451,47 @@ def check_triggers(wf: Workflow) -> list[Finding]:
     return out
 
 
+# Inputs de action de terceiros cujo valor é executado como SHELL (remoto ou local): o texto
+# interpolado ali é reinterpretado por um shell, exatamente como um `run:`. `appleboy/ssh-action`
+# usa `script`, `azure/cli` usa `inlineScript`, várias usam `command`/`cmd`/`run`. Só vale para
+# action de TERCEIROS (a de 1ª parte com `script` é o github-script, tratado à parte).
+_SHELL_INPUTS = frozenset(
+    {"script", "inlinescript", "inline_script", "command", "commands", "cmd", "run"}
+)
+
+
 def _exec_texts(step: dict[str, Any]) -> list[tuple[str, str]]:
     """(sink, texto) executados onde ${{ }} é interpolado.
 
-    ``sink`` é ``"run"`` (shell) ou ``"github-script"`` (JS) — a correção sugerida difere:
-    ``"$VAR"`` no shell, ``process.env.VAR`` no JS.
+    ``sink`` é ``"run"`` (shell), ``"github-script"`` (JS) ou ``"action-shell"`` (input de shell
+    de action de terceiros) — a correção sugerida difere: ``"$VAR"`` no shell/action-shell,
+    ``process.env.VAR`` no JS. Só ``run``/``github-script`` são varridos por segredo/curl; o
+    ``action-shell`` alimenta apenas a injeção (não sabemos o dialeto exato do shell remoto).
     """
     texts: list[tuple[str, str]] = []
     run = step.get("run")
     if isinstance(run, str):
         texts.append(("run", run))
     uses = step.get("uses")
-    if isinstance(uses, str) and uses.startswith("actions/github-script"):
+    if not isinstance(uses, str):
+        return texts
+    if uses.startswith("actions/github-script"):
         with_ = step.get("with")
         script = with_.get("script") if isinstance(with_, dict) else None
         if isinstance(script, str):
             texts.append(("github-script", script))
+        return texts
+    parsed = _action_ref(uses)
+    if (
+        parsed is not None
+        and "/.github/workflows/" not in parsed[0]
+        and parsed[0].split("/", 1)[0] not in _FIRST_PARTY
+    ):
+        with_ = step.get("with")
+        if isinstance(with_, dict):
+            for key, value in with_.items():
+                if isinstance(value, str) and str(key).strip().lower() in _SHELL_INPUTS:
+                    texts.append(("action-shell", value))
     return texts
 
 
@@ -486,59 +583,229 @@ def _anchor_line(wf: Workflow, command: str, fallback: str, cursor: int) -> int:
     return at
 
 
+# --------------------------------------------------------------------------- #
+# taint: contexto não-confiável que chega ao sink por um DESVIO (output de step/job, env
+# dinâmica via $GITHUB_ENV, valor de matriz). A fronteira é a MESMA de sempre — só o texto cru
+# do atacante injeta; um valor SANITIZADO por caminho ($(… | tr -c 'a-z' …)) NÃO propaga taint,
+# que é o que separa p11/p12 (cru) do benigno c21 (filtrado) no corpus.
+# --------------------------------------------------------------------------- #
+
+# Escrita `name=value` para o arquivo $GITHUB_ENV / $GITHUB_OUTPUT.
+_GHFILE = re.compile(r"\$\{?GITHUB_(ENV|OUTPUT)\}?")
+# Substituição de comando `$( … )` / `` ` … ` `` (nível único): tratamos o que passa por ela
+# como potencialmente filtrado — o valor não é mais o texto cru do atacante.
+_CMD_SUBST = re.compile(r"\$\([^()]*\)|`[^`]*`")
+_ASSIGN = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*)=(.*)$", re.DOTALL)
+_ECHO_PREFIX = re.compile(r"^\s*(?:echo|printf)\b\s*(?:-[eEnr]+\s+)?(?:'%s(?:\\n)?'\s+)?", re.I)
+
+
+def _tainted_env_vars(env_map: dict[str, Any]) -> set[str]:
+    """Nomes de variáveis do `env:` efetivo cujo valor carrega contexto não-confiável (`$T` onde
+    `T: ${{ github.event.* }}`)."""
+    return {
+        str(name).lower()
+        for name, value in env_map.items()
+        if isinstance(value, str) and _untrusted_hit(_resolve_env_refs(value, env_map))
+    }
+
+
+def _value_carries_taint(value: str, tainted_vars: set[str], env_map: dict[str, Any]) -> bool:
+    v = _CMD_SUBST.sub("", value)  # o que passou por $( … ) pode ter sido filtrado: não é cru
+    if _untrusted_hit(_resolve_env_refs(v, env_map)):
+        return True
+    return any(
+        re.search(r"\$\{?" + re.escape(var) + r"(?![A-Za-z0-9_])", v, re.IGNORECASE)
+        for var in tainted_vars
+    )
+
+
+def _github_file_assignments(line: str) -> list[tuple[str, str, str]]:
+    """(alvo, nome, valor) para cada `echo "nome=valor" >> $GITHUB_ENV|OUTPUT` da linha."""
+    m = _GHFILE.search(line)
+    if m is None:
+        return []
+    before = line[: m.start()]
+    redirs = list(re.finditer(r">>?", before))
+    content = before[: redirs[-1].start()] if redirs else before
+    content = _ECHO_PREFIX.sub("", content).strip()
+    if len(content) >= 2 and content[0] in "\"'" and content[-1] == content[0]:
+        content = content[1:-1]
+    assign = _ASSIGN.match(content)
+    if assign is None:
+        return []
+    return [(m.group(1), assign.group(1).lower(), assign.group(2))]
+
+
+def _step_output_taint(job: dict[str, Any], workflow_env: dict[str, Any]) -> dict[str, set[str]]:
+    """{id_do_step: {nomes de output com taint}} — output cru derivado de contexto não-confiável."""
+    job_env = {**workflow_env, **_env_of(job)}
+    result: dict[str, set[str]] = {}
+    for step in _steps_of(job):
+        sid = step.get("id")
+        run = step.get("run")
+        if not isinstance(sid, str) or not isinstance(run, str):
+            continue
+        env_map = {**job_env, **_env_of(step)}
+        tainted_vars = _tainted_env_vars(env_map)
+        names = {
+            name
+            for line in run.splitlines()
+            for which, name, value in _github_file_assignments(line)
+            if which == "OUTPUT" and _value_carries_taint(value, tainted_vars, env_map)
+        }
+        if names:
+            result[sid.lower()] = names
+    return result
+
+
+def _job_output_taint(
+    job: dict[str, Any], step_out: dict[str, set[str]], workflow_env: dict[str, Any]
+) -> set[str]:
+    outputs = job.get("outputs")
+    if not isinstance(outputs, dict):
+        return set()
+    job_env = {**workflow_env, **_env_of(job)}
+    tainted: set[str] = set()
+    for oname, value in outputs.items():
+        if not isinstance(value, str):
+            continue
+        norm = _normalize_brackets(value).lower()
+        if _untrusted_hit(_resolve_env_refs(value, job_env)):
+            tainted.add(str(oname).lower())
+            continue
+        for sid, onames in step_out.items():
+            if any(f"steps.{sid}.outputs.{on}" in norm for on in onames):
+                tainted.add(str(oname).lower())
+    return tainted
+
+
+def _update_runtime_env_taint(
+    step: dict[str, Any], env_map: dict[str, Any], runtime_tainted: set[str]
+) -> None:
+    """Acumula os nomes exportados para $GITHUB_ENV com valor cru não-confiável — visíveis como
+    `${{ env.NOME }}` nos steps SEGUINTES do job (a env dinâmica que `_resolve_env_refs` não vê)."""
+    run = step.get("run")
+    if not isinstance(run, str):
+        return
+    tainted_vars = _tainted_env_vars(env_map)
+    for line in run.splitlines():
+        for which, name, value in _github_file_assignments(line):
+            if which == "ENV" and _value_carries_taint(value, tainted_vars, env_map):
+                runtime_tainted.add(name)
+
+
+def _taint_hit(inner: str, taint_ctx: Any, env_map: dict[str, Any]) -> str | None:
+    """Contexto não-confiável alcançado por desvio (output/env-dinâmica/matriz) na expressão."""
+    if taint_ctx is None:
+        return None
+    job, step_out, job_out_taint, runtime_tainted = taint_ctx
+    norm = _normalize_brackets(inner).lower()
+    m = re.search(r"steps\.([\w-]+)\.outputs\.([\w-]+)", norm)
+    if m is not None and m.group(2) in step_out.get(m.group(1), set()):
+        return m.group(0)
+    m = re.search(r"needs\.([\w-]+)\.outputs\.([\w-]+)", norm)
+    if m is not None and m.group(2) in job_out_taint.get(m.group(1), set()):
+        return m.group(0)
+    m = re.search(r"(?<![\w.])env\.([\w-]+)", norm)
+    if m is not None and m.group(1) in runtime_tainted:
+        return m.group(0)
+    m = re.search(r"(?<![\w.])matrix\.([\w-]+)", norm)
+    if m is not None and any(_untrusted_hit(v) for v in _matrix_values(job, m.group(1))):
+        return m.group(0)
+    return None
+
+
+def _scan_step_injection(
+    wf: Workflow,
+    out: list[Finding],
+    step: dict[str, Any],
+    env_map: dict[str, Any],
+    cursor: int,
+    taint_ctx: Any,
+) -> int:
+    for sink, text in _exec_texts(step):
+        for match in _EXPR.finditer(text):
+            resolved = _resolve_env_refs(match.group(0), env_map)
+            hit = _untrusted_hit(resolved) or _taint_hit(match.group(1), taint_ctx, env_map)
+            if hit is None:
+                continue
+            if _expr_resulta_booleano(match.group(1)):
+                continue  # ${{ contains(...) }} / comparacao: resultado booleano, nao injetavel
+            evidence = match.group(0).strip()
+            at = _anchor_line(wf, _containing_line(text, match), evidence, cursor)
+            cursor = at + 1
+            out.append(
+                make_finding(
+                    "script-injection",
+                    wf.path,
+                    at,
+                    f"Contexto não-confiável interpolado: {hit}.",
+                    evidence=evidence,
+                    severity=_injection_severity(wf, hit),
+                    fix_suggestion=_injection_fix(evidence, hit, in_js=sink == "github-script"),
+                )
+            )
+    return cursor
+
+
 def check_script_injection(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
     cursor = 1
-    for step, env_map in _step_contexts(wf.data):
-        for sink, text in _exec_texts(step):
-            for match in _EXPR.finditer(text):
-                resolved = _resolve_env_refs(match.group(0), env_map)
-                hit = _untrusted_hit(resolved)
-                if hit is None:
-                    continue
-                if _expr_resulta_booleano(match.group(1)):
-                    continue  # ${{ contains(...) }} / comparacao: resultado booleano, nao injetavel
-                evidence = match.group(0).strip()
-                at = _anchor_line(wf, _containing_line(text, match), evidence, cursor)
-                cursor = at + 1
-                out.append(
-                    make_finding(
-                        "script-injection",
-                        wf.path,
-                        at,
-                        f"Contexto não-confiável interpolado: {hit}.",
-                        evidence=evidence,
-                        severity=_injection_severity(wf, hit),
-                        fix_suggestion=_injection_fix(evidence, hit, in_js=sink == "github-script"),
-                    )
-                )
+    data = wf.data
+    workflow_env = _env_of(data)
+    jobs_map = data.get("jobs") if isinstance(data, dict) else None
+    jobs_map = jobs_map if isinstance(jobs_map, dict) else {}
+    valid_jobs = {str(n).lower(): j for n, j in jobs_map.items() if isinstance(j, dict)}
+    step_out_by_job = {n: _step_output_taint(j, workflow_env) for n, j in valid_jobs.items()}
+    job_out_taint = {
+        n: _job_output_taint(j, step_out_by_job[n], workflow_env) for n, j in valid_jobs.items()
+    }
+    for name, job in valid_jobs.items():
+        job_env = {**workflow_env, **_env_of(job)}
+        runtime_tainted: set[str] = set()
+        taint_ctx = (job, step_out_by_job[name], job_out_taint, runtime_tainted)
+        for step in _steps_of(job):
+            env_map = {**job_env, **_env_of(step)}
+            cursor = _scan_step_injection(wf, out, step, env_map, cursor, taint_ctx)
+            _update_runtime_env_taint(step, env_map, runtime_tainted)
+    # Composite action (runs.steps): sem contexto de job/needs/matriz — só o taint direto.
+    runs = data.get("runs") if isinstance(data, dict) else None
+    if isinstance(runs, dict) and isinstance(runs.get("steps"), list):
+        for step in runs["steps"]:
+            if isinstance(step, dict):
+                env_map = {**workflow_env, **_env_of(step)}
+                cursor = _scan_step_injection(wf, out, step, env_map, cursor, None)
     return out
 
 
-def _exec_lines(wf: Workflow) -> Iterator[tuple[str, str]]:
-    """(sink, linha) de cada linha executável do workflow, na ordem do arquivo.
+def _exec_lines(wf: Workflow) -> Iterator[tuple[str, str, str]]:
+    """(sink, shell, linha) de cada linha executável do workflow, na ordem do arquivo.
 
     Fronteira única de "onde há execução": reusa ``_exec_texts`` (``run:`` e o ``script:``
     do ``actions/github-script``), de modo que uma checagem nova não precise reimplementar
-    a navegação por steps — e um sink novo passe a valer para todas de uma vez.
+    a navegação por steps — e um sink novo passe a valer para todas de uma vez. O ``shell`` é o
+    do step (bash|pwsh|python), que decide qual comando imprime no stdout.
     """
     for step, _env in _step_contexts(wf.data):
+        shell = _step_shell(step)
         for sink, text in _exec_texts(step):
             for line in text.splitlines():
-                yield sink, line
+                yield sink, shell, line
 
 
 def check_secret_in_run(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
     cursor = 1
-    for sink, line in _exec_lines(wf):
-        vazamento = _secret_echo_leak(line, sink)
+    for sink, shell, line in _exec_lines(wf):
+        vazamento = _secret_echo_leak(line, sink, shell)
         if vazamento is None:
             continue
         stripped = line.strip()
         at = wf.find_line(stripped[:60], start=cursor) if stripped else cursor
         cursor = at + 1  # âncora: N vazamentos idênticos ⇒ N linhas distintas
         out.append(_secret_finding(wf.path, at, vazamento, stripped))
+    out += _secret_heredoc_leaks(wf, cursor)
+    out += _secret_file_then_artifact(wf, cursor)
     return out
 
 
@@ -552,6 +819,11 @@ _DETALHE_VAZAMENTO: dict[str, str] = {
         "Segredo exportado para $GITHUB_ENV: ele passa a existir no ambiente de TODOS os "
         "steps seguintes do job, inclusive actions de terceiros — que recebem o process.env "
         "inteiro, sem precisar declarar nada."
+    ),
+    "artifact": (
+        "Um segredo é gravado em arquivo e, depois, um step publica esse arquivo como artefato "
+        "(upload-artifact): o valor fica baixável por qualquer um com acesso aos artefatos do "
+        "repositório. Gravar em disco não protege se o disco é publicado."
     ),
 }
 # Exportar para o ambiente não expõe o valor fora do job: é escopo largo demais, não vazamento
@@ -587,12 +859,31 @@ _QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 _SEPARADOR_DE_COMANDO = re.compile(r"\|\||&&|[;|]")
 # `$GITHUB_ENV` em qualquer das grafias que o shell aceita como alvo do redirecionamento.
 _GITHUB_ENV = re.compile(r"\$\{?GITHUB_ENV\}?")
-# Comandos que imprimem no stdout, por sink. No `run:` é o shell; no `github-script` a saída
-# de console/@actions/core também vai para o log da Action.
-_PRINT_COMMANDS: dict[str, tuple[str, ...]] = {
-    "run": ("echo", "printf"),
-    "github-script": ("console.log", "console.error", "console.warn", "core.info", "core.warning"),
+# Comandos que imprimem no stdout — o segredo vai para o log do job. O `run:` depende do SHELL do
+# step: `echo`/`printf` no bash, `Write-Host`/`Write-Output` no pwsh, `print(...)` no python. Um
+# `echo` do bash não imprime nada num step `shell: python`, e um `print` do python não é comando
+# de bash — por isso o conjunto é por shell, com fronteira de palavra (`\bprint\b` não casa
+# `fingerprint`). O `github-script` roda JS, onde console/@actions/core também vão ao log.
+_RUN_PRINT_RE: dict[str, re.Pattern[str]] = {
+    "bash": re.compile(r"\b(?:echo|printf)\b", re.IGNORECASE),
+    "pwsh": re.compile(
+        r"\b(?:echo|write-host|write-output|write-error|write-warning|out-host)\b", re.IGNORECASE
+    ),
+    "python": re.compile(r"\bprint\b", re.IGNORECASE),
 }
+_JS_PRINT_RE = re.compile(r"console\.(?:log|error|warn)|core\.(?:info|warning)", re.IGNORECASE)
+
+
+def _step_shell(step: dict[str, Any]) -> str:
+    """Normaliza `shell:` do step para a família cujo comando de impressão vale: bash|pwsh|python."""
+    sh = step.get("shell")
+    if isinstance(sh, str):
+        s = sh.strip().lower()
+        if s.startswith("python"):
+            return "python"
+        if s in ("pwsh", "powershell"):
+            return "pwsh"
+    return "bash"  # bash/sh/cmd e o padrão do runner: echo/printf
 
 
 def _neutraliza_aspas(line: str) -> str:
@@ -618,7 +909,7 @@ def _segmento(neutro: str, pos: int) -> tuple[int, int]:
     return inicio, fim
 
 
-def _secret_echo_leak(line: str, sink: str = "run") -> str | None:
+def _secret_echo_leak(line: str, sink: str = "run", shell: str = "bash") -> str | None:
     """Classifica o vazamento da linha: ``"log"``, ``"github-env"`` ou ``None``.
 
     A checagem exige que o comando de impressão e o segredo estejam no MESMO comando. Sem
@@ -632,12 +923,16 @@ def _secret_echo_leak(line: str, sink: str = "run") -> str | None:
     `echo "K=${{ secrets.X }}" >> $GITHUB_ENV`, que é onde há risco — ficava calada.
     """
     lowered = line.lower()
-    comandos = _PRINT_COMMANDS.get(sink, ())
-    if not any(cmd in lowered for cmd in comandos):
-        return None
-    if sink != "run":
+    if sink == "github-script":
         # No JS não há redirecionamento de shell: o valor vai direto para o log da Action.
+        if not _JS_PRINT_RE.search(lowered):
+            return None
         return "log" if any("secrets." in m.group(1) for m in _EXPR.finditer(line)) else None
+    if sink != "run":
+        return None  # sink sem semântica de impressão de stdout (ex.: action-shell)
+    print_re = _RUN_PRINT_RE.get(shell, _RUN_PRINT_RE["bash"])
+    if not print_re.search(lowered):
+        return None
     # Segredo entregue pelo STDIN do próximo comando não passa pelo stdout em momento nenhum.
     if "--password-stdin" in lowered or "--with-token" in lowered:
         return None
@@ -648,7 +943,7 @@ def _secret_echo_leak(line: str, sink: str = "run") -> str | None:
         if _expr_resulta_booleano(expr.group(1)):
             continue  # `secrets.K != ''` imprime true/false, nao o segredo (FP 30)
         inicio, fim = _segmento(neutro, expr.start())
-        if not any(cmd in lowered[inicio : expr.start()] for cmd in comandos):
+        if not print_re.search(lowered[inicio : expr.start()]):
             continue  # o `echo` desta linha está em OUTRO comando: não é ele que imprime
         if "::add-mask::" in lowered[inicio:fim]:
             continue  # `echo "::add-mask::${{ secrets.X }}"` MASCARA o segredo (FP 16), nao vaza
@@ -668,12 +963,123 @@ def _secret_echo_leak(line: str, sink: str = "run") -> str | None:
     return None
 
 
+_HEREDOC_START = re.compile(r"<<-?\s*(['\"]?)(\w+)\1")
+
+
+def _line_has_secret(line: str) -> bool:
+    return any(
+        "secrets." in e.group(1) and not _expr_resulta_booleano(e.group(1))
+        for e in _EXPR.finditer(line)
+    )
+
+
+def _secret_heredoc_leaks(wf: Workflow, cursor: int) -> list[Finding]:
+    """Segredo no CORPO de um heredoc que sai pelo stdout (`cat <<EOF … EOF`, sem redirecionar).
+
+    O caminho linha-a-linha não pega isto: o `cat`/`<<EOF` está numa linha e o segredo em OUTRA
+    (o corpo). `cat` de heredoc SEM `> arquivo` nem pipe imprime o corpo no log do job — o mesmo
+    vazamento de um `echo`. Se o cabeçalho redireciona a arquivo (`cat <<EOF >> "$GITHUB_STEP_
+    SUMMARY"`) ou pipa, o corpo não vai ao log e nada é reportado (classe FP 11)."""
+    out: list[Finding] = []
+    for step, _env in _step_contexts(wf.data):
+        if _step_shell(step) != "bash":
+            continue  # heredoc é idioma POSIX/bash
+        run = step.get("run")
+        if not isinstance(run, str):
+            continue
+        lines = run.splitlines()
+        i = 0
+        while i < len(lines):
+            header = _HEREDOC_START.search(lines[i])
+            if header is None:
+                i += 1
+                continue
+            delim = header.group(2)
+            neutro = _neutraliza_aspas(lines[i])
+            to_stdout = _REDIRECT_TO_FILE.search(neutro) is None and not re.search(
+                r"\|(?!\|)", neutro
+            )
+            j = i + 1
+            while j < len(lines) and lines[j].strip() != delim:
+                if to_stdout and _line_has_secret(lines[j]):
+                    at = wf.find_line(lines[j].strip()[:60], start=cursor)
+                    cursor = at + 1
+                    out.append(_secret_finding(wf.path, at, "log", lines[j].strip()))
+                    to_stdout = False  # um achado por heredoc basta
+                j += 1
+            i = j + 1
+    return out
+
+
+# Alvo de redirecionamento (`> arquivo`) que NÃO é um arquivo especial do runner.
+_REDIRECT_TARGET = re.compile(r">>?\s*([^\s&|;<>]+)")
+
+
+def _secret_file_target(line: str) -> str | None:
+    """Caminho de arquivo para onde a linha grava um segredo (ou None). Exclui os arquivos
+    especiais do runner ($GITHUB_ENV/$GITHUB_OUTPUT/$GITHUB_*), que têm semântica própria."""
+    if not _line_has_secret(line):
+        return None
+    neutro = _neutraliza_aspas(line)
+    redir = _REDIRECT_TO_FILE.search(neutro)
+    if redir is None:
+        return None
+    alvo = _REDIRECT_TARGET.search(line[redir.start() :])
+    if alvo is None:
+        return None
+    target = alvo.group(1).strip("\"'")
+    if "GITHUB_" in target.upper():
+        return None
+    return target
+
+
+def _artifact_covers(with_: dict[str, Any], secret_path: str) -> bool:
+    """O upload-artifact publica o arquivo de segredo? (raiz do workspace, ou o caminho exato)."""
+    if _publishes_workspace(with_):
+        return not secret_path.startswith(("/", "~"))  # arquivo relativo dentro do workspace
+    entries = [
+        line.strip().strip("\"'")
+        for line in str(with_.get("path", "")).splitlines()
+        if line.strip()
+    ]
+    return secret_path in entries
+
+
+def _secret_file_then_artifact(wf: Workflow, cursor: int) -> list[Finding]:
+    """Segredo gravado em arquivo e, depois, publicado como artefato — exfiltração equivalente ao
+    log. Gravar em disco é 'seguro' isolado (classe FP 28, sem upload), mas o `upload-artifact`
+    do MESMO arquivo (ou da raiz do workspace) entrega o segredo a quem baixar o artefato."""
+    out: list[Finding] = []
+    for job in _jobs(wf.data):
+        secret_files: dict[str, int] = {}
+        for step in _steps_of(job):
+            run = step.get("run")
+            if isinstance(run, str):
+                for line in run.splitlines():
+                    target = _secret_file_target(line)
+                    if target is not None and target not in secret_files:
+                        secret_files[target] = wf.find_line(line.strip()[:60], start=cursor)
+            uses = step.get("uses")
+            if (
+                isinstance(uses, str)
+                and uses.startswith("actions/upload-artifact")
+                and secret_files
+            ):
+                with_raw = step.get("with")
+                with_ = with_raw if isinstance(with_raw, dict) else {}
+                for path, at in list(secret_files.items()):
+                    if _artifact_covers(with_, path):
+                        out.append(_secret_finding(wf.path, at, "artifact", path))
+                secret_files = {}  # consumidos por este upload
+    return out
+
+
 def check_curl_pipe(wf: Workflow) -> list[Finding]:
     out: list[Finding] = []
     cursor = 1
-    for sink, line in _exec_lines(wf):
+    for sink, _shell, line in _exec_lines(wf):
         # Só o sink de shell: `curl | bash` não existe dentro do JS do github-script.
-        if sink != "run" or not _CURL_PIPE.search(line):
+        if sink != "run" or not _curl_pipe_hit(line):
             continue
         stripped = line.strip()
         at = wf.find_line(stripped[:60], start=cursor) if stripped else cursor
@@ -822,6 +1228,52 @@ def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
                 )
             )
             break  # um achado por step basta (with: tem prioridade sobre env:)
+    out += _reusable_secret_to_thirdparty(wf, cursor)
+    return out
+
+
+def _reusable_secret_to_thirdparty(wf: Workflow, cursor: int) -> list[Finding]:
+    """Reusable workflow de OUTRA org, por @branch/@tag, recebendo segredo explícito via `secrets:`.
+
+    O `check_secret_to_thirdparty` pula o reusable ('coberto à parte'), mas o único que cobre o
+    reusable inteiro é `secrets-inherit` — e ELE só vê a palavra `inherit`. Um `secrets:` com mapa
+    explícito (`DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}`) para `outra-org/…@main` entrega o
+    segredo a código de terceiros que uma branch móvel pode trocar: a MESMA classe de
+    secret-to-thirdparty, por outro canal. Primeira parte / fixado por SHA não alarmam (revisado)."""
+    data = wf.data
+    jobs = data.get("jobs") if isinstance(data, dict) else None
+    if not isinstance(jobs, dict):
+        return []
+    out: list[Finding] = []
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            continue
+        parsed = _action_ref(job.get("uses"))
+        if parsed is None or "/.github/workflows/" not in parsed[0]:
+            continue
+        action, ref = parsed
+        if action.split("/", 1)[0] in _FIRST_PARTY or _SHA.match(ref):
+            continue
+        secrets = job.get("secrets")
+        if not isinstance(secrets, dict):
+            continue  # 'inherit' (string) fica com check_secrets_inherit
+        binding = _first_secret_binding(secrets)
+        if binding is None:
+            continue
+        key, secret = binding
+        anchor = wf.find_line(f"{action}@{ref}", start=cursor)
+        cursor = anchor + 1
+        line = wf.find_line(secret, default=anchor, start=anchor)
+        out.append(
+            make_finding(
+                "secret-to-thirdparty-action",
+                wf.path,
+                line,
+                f"segredo ({secret}) passado via secrets.{key} para o reusable workflow de "
+                f"terceiros '{action}' fixado por '{ref}' (não é SHA).",
+                evidence=secret,
+            )
+        )
     return out
 
 
@@ -852,6 +1304,19 @@ def check_secrets_inherit(wf: Workflow) -> list[Finding]:
     return out
 
 
+_MATRIX_ONLY = re.compile(r"\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}")
+
+
+def _resolve_matrix_image(job: dict[str, Any], image: str) -> list[str] | None:
+    """Se ``image`` é exatamente ``${{ matrix.X }}``, os valores estáticos daquele eixo da
+    matriz (axis + include). ``None`` quando não é uma referência de matriz resolvível — aí o
+    chamador mantém o comportamento padrão (imagem tratada como tag)."""
+    m = _MATRIX_ONLY.fullmatch(image.strip())
+    if m is None:
+        return None
+    return _matrix_values(job, m.group(1)) or None
+
+
 def check_unpinned_images(wf: Workflow) -> list[Finding]:
     """Imagens de contêiner (container:/services:/docker://) fixadas por tag, não por digest."""
     out: list[Finding] = []
@@ -859,6 +1324,12 @@ def check_unpinned_images(wf: Workflow) -> list[Finding]:
     for job in _jobs(wf.data):
         for image in _job_images(job):
             if "@sha256:" in image:
+                continue
+            resolved = _resolve_matrix_image(job, image)
+            # Imagem vinda de `${{ matrix.X }}` cujos valores são TODOS fixados por digest: a
+            # imagem efetiva já está pinada em cada célula da matriz — resolver estaticamente
+            # evita acusar a expressão como se fosse uma tag móvel (classe FP 35).
+            if resolved is not None and all("@sha256:" in v for v in resolved):
                 continue
             line = wf.find_line(image, start=cursor)
             cursor = line + 1
@@ -895,6 +1366,19 @@ _WORKSPACE_PATHS = frozenset(
 )
 
 
+def _persist_credentials_disabled(value: Any) -> bool:
+    """`persist-credentials` desligado? O runner entrega todo `with:` como STRING; o
+    `actions/checkout` lê o input com `core.getBooleanInput`, que aceita `false`/`False`/`FALSE`
+    (e por extensão as grafias falsy usuais) tanto quanto o booleano YAML `false`. Tratar só o
+    booleano `False` como desligado (e a string `'false'` como ligado) inverte a semântica real
+    e acusa um checkout que de fato NÃO persiste a credencial (classe FP 19)."""
+    if value is False:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in _ENV_FALSY
+    return False
+
+
 def _publishes_workspace(with_: dict[str, Any]) -> bool:
     path = with_.get("path")
     if path is None:
@@ -923,7 +1407,7 @@ def check_checkout_credentials(wf: Workflow) -> list[Finding]:
             with_raw = step.get("with")
             with_: dict[str, Any] = with_raw if isinstance(with_raw, dict) else {}
             if uses.startswith("actions/checkout"):
-                if with_.get("persist-credentials") is not False:
+                if not _persist_credentials_disabled(with_.get("persist-credentials")):
                     exposed_at = wf.find_line(uses, start=cursor)
                     cursor = exposed_at + 1
             elif (
@@ -968,9 +1452,19 @@ def _ref_is_pr_code(ref: str) -> bool:
     return bool(_PR_REF.search(_normalize_brackets(ref)))
 
 
+# Gatilhos que rodam no contexto do repositório-base — com segredos e token de escrita — mas
+# podem receber o head do fork. Fazer checkout/clonar/buscar esse head sob QUALQUER um deles é
+# executar código não-confiável com privilégio; a gaiola do `pull_request_target` valia igual
+# para o `workflow_run` (mesmos privilégios) e para o `issue_comment` (ChatOps que dá checkout).
+_PRIVILEGED_CHECKOUT_TRIGGERS = ("pull_request_target", "workflow_run", "issue_comment")
+
+
 def check_ppt_checkout(wf: Workflow) -> list[Finding]:
-    if "pull_request_target" not in trigger_names(wf.data or {}):
+    names = trigger_names(wf.data or {})
+    presentes = [t for t in _PRIVILEGED_CHECKOUT_TRIGGERS if t in names]
+    if not presentes:
         return []
+    gatilho = presentes[0]
     out: list[Finding] = []
     cursor = 1
     workflow_env = _env_of(wf.data)
@@ -978,14 +1472,29 @@ def check_ppt_checkout(wf: Workflow) -> list[Finding]:
         job_env = {**workflow_env, **_env_of(job)}
         for step in _steps_of(job):
             env_map = {**job_env, **_env_of(step)}
-            finding, cursor = _ppt_step_finding(wf, step, env_map, cursor)
+            finding, cursor = _ppt_step_finding(wf, step, env_map, cursor, gatilho)
             if finding is not None:
                 out.append(finding)
     return out
 
 
+def _expand_shell_vars(text: str, env_map: dict[str, Any]) -> str:
+    """Substitui `$VAR`/`${VAR}` pelo valor de env do step (uma passada, sem recursão de shell).
+
+    O checkout do fork por `git clone`/`git fetch` costuma parametrizar o repo/ref por variáveis
+    de ambiente (`REF: ${{ github.event.pull_request.head.ref }}` → `git clone … "$REF"`). Trazer
+    o valor de volta para a linha deixa `_PR_REF`/`_FORK_REPO` reconhecerem o alvo não-confiável —
+    sem isso, o `$REF` opaco esconde o clone do fork."""
+
+    def repl(match: re.Match[str]) -> str:
+        value = env_map.get(match.group(1))
+        return str(value) if isinstance(value, str) else match.group(0)
+
+    return _SHELL_VAR.sub(repl, text)
+
+
 def _ppt_step_finding(
-    wf: Workflow, step: dict[str, Any], env_map: dict[str, Any], cursor: int
+    wf: Workflow, step: dict[str, Any], env_map: dict[str, Any], cursor: int, gatilho: str
 ) -> tuple[Finding | None, int]:
     uses = step.get("uses")
     if isinstance(uses, str) and uses.startswith("actions/checkout"):
@@ -1004,8 +1513,11 @@ def _ppt_step_finding(
             line = wf.find_line(needle, default=anchor, start=anchor) if needle else anchor
             # Credita mitigações do mantenedor: persist-credentials:false + sparse-checkout de
             # caminho não-executável reduzem (não zeram) o risco → HIGH em vez de CRITICAL.
-            mitigated = with_.get("persist-credentials") is False and "sparse-checkout" in with_
-            detail = f"checkout do código do PR ({reason}) sob pull_request_target."
+            mitigated = (
+                _persist_credentials_disabled(with_.get("persist-credentials"))
+                and "sparse-checkout" in with_
+            )
+            detail = f"checkout do código do PR ({reason}) sob {gatilho}."
             severity = None
             if mitigated:
                 severity = Severity.HIGH
@@ -1028,7 +1540,15 @@ def _ppt_step_finding(
     run = step.get("run")
     if isinstance(run, str):
         for line_text in run.splitlines():
-            if _PR_CHECKOUT_RUN.search(line_text):
+            expandido = _normalize_brackets(_expand_shell_vars(line_text, env_map))
+            # `gh pr checkout` / `git fetch pull/*` casam direto; `git clone`/`git fetch`/`git
+            # checkout` de um alvo que — após expandir as variáveis de env — aponta para o
+            # head/repo do fork é o mesmo risco por outra sintaxe (classe: buscar código do PR).
+            fetches_pr_code = _PR_CHECKOUT_RUN.search(expandido) or (
+                _GIT_FETCH_CODE.search(expandido)
+                and (_PR_REF.search(expandido) or _FORK_REPO.search(expandido))
+            )
+            if fetches_pr_code:
                 line = (
                     wf.find_line(line_text.strip()[:60], start=cursor)
                     if line_text.strip()
@@ -1039,8 +1559,8 @@ def _ppt_step_finding(
                         "pull-request-target-checkout",
                         wf.path,
                         line,
-                        "checkout do código do PR via shell (gh pr checkout / git fetch pull) "
-                        "sob pull_request_target.",
+                        "checkout do código do PR via shell (gh pr checkout / git fetch pull / "
+                        f"git clone do fork) sob {gatilho}.",
                         evidence=evidencia(line_text),
                     ),
                     line + 1,
@@ -1286,7 +1806,7 @@ def _fallback_checks(wf: Workflow) -> list[Finding]:
         # `_CURL_PIPE` exige POSIÇÃO DE COMANDO. No caminho estrutural o valor do `run:` já
         # chega isolado; aqui a linha é crua, e o prefixo `- run: ` empurraria o `curl` para
         # fora dessa posição — falso-negativo só por estarmos no fallback.
-        if _CURL_PIPE.search(_RUN_KEY.sub("", line)):
+        if _curl_pipe_hit(_RUN_KEY.sub("", line)):
             out.append(
                 make_finding(
                     "curl-pipe-shell",
