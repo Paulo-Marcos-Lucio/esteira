@@ -719,7 +719,7 @@ def test_pipe_ou_redirect_que_nao_reemite_nao_vaza(tmp_path: Path) -> None:
         "printf '%s' \"${{ secrets.GPG_KEY }}\" | gpg --batch --import",
         'echo -n "${{ secrets.SA_JSON }}" | jq -r .project_id',
         'echo "${{ secrets.API_KEY }}" | cat > out.txt',
-        'printf \'%s\' "${{ secrets.SSH_KEY }}" > id_deploy',
+        "printf '%s' \"${{ secrets.SSH_KEY }}\" > id_deploy",
     ):
         assert "secret-in-run" not in _run(tmp_path, cmd), cmd
 
