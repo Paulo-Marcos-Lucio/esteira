@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from esteira.core.models import Finding, ScanResult, Severity
+from esteira.core.models import Finding, Profile, ScanResult, Severity
 
 _STYLE: dict[Severity, str] = {
     Severity.CRITICAL: "bold white on red",
@@ -56,13 +56,18 @@ def render(result: ScanResult, console: Console | None = None) -> None:
     table.add_column("Local", overflow="fold")
     table.add_column("Detalhe", overflow="fold")
     for finding in findings:
+        detalhe = finding.detail
+        if finding.severity_note is not None:
+            detalhe += " ⚠"
         table.add_row(
             Text(_LABEL[finding.severity], style=_STYLE[finding.severity]),
             txt(finding.check_id),
             txt(f"{finding.path}:{finding.line}"),
-            txt(finding.detail),
+            txt(detalhe),
         )
     console.print(table)
+    if result.profile is not None:
+        console.print(_perfil_aplicado(result.profile, findings))
     console.print(_plano_de_acao(findings))
 
     counts = _counts(result)
@@ -70,6 +75,31 @@ def render(result: ScanResult, console: Console | None = None) -> None:
     console.print(
         f"\n[bold]{len(result.findings)} achado(s)[/] em {result.files_scanned} workflow(s) — "
         + "  ".join(parts)
+    )
+
+
+def _perfil_aplicado(profile: Profile, findings: list[Finding]) -> Panel:
+    """As severidades que o perfil mudou, com a justificativa — nunca um número mudo.
+
+    Só lista o que de fato mudou (`severity_note` presente); um perfil sem ajuste aplicável
+    a este scan não gera painel vazio de confusão.
+    """
+    ajustadas = [f for f in findings if f.severity_note is not None]
+    corpo = Text()
+    if not ajustadas:
+        corpo.append("Nenhuma severidade deste scan foi ajustada por este perfil.", style="dim")
+    else:
+        for posicao, finding in enumerate(ajustadas):
+            if posicao:
+                corpo.append("\n")
+            corpo.append(f"⚠ {finding.check_id}", style="bold")
+            corpo.append(f" ({finding.path}:{finding.line}) — ")
+            corpo.append(str(finding.severity_note))
+    return Panel(
+        corpo,
+        title=f"Perfil aplicado: {profile.value}",
+        border_style="magenta",
+        box=box.ROUNDED,
     )
 
 

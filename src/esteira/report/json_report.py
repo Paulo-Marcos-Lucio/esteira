@@ -33,6 +33,7 @@ def finding_to_dict(finding: Finding) -> dict[str, Any]:
         "owasp": finding.owasp,
         "recommendation": finding.recommendation,
         "fix_suggestion": finding.fix_suggestion,
+        "severity_note": finding.severity_note,
     }
 
 
@@ -51,6 +52,9 @@ def to_document(result: ScanResult) -> dict[str, Any]:
         # desaparece na entrega seguinte é indistinguível de uma regra que foi afrouxada.
         "commit": provenance.commit(result.root),
         "ruleset_hash": provenance.ruleset_hash(),
+        # Perfil de severidade aplicado (`None` = nenhum, severidades puras do catálogo) —
+        # sem isto, um achado com severidade diferente do CATALOG pareceria erro de relatório.
+        "profile": result.profile.value if result.profile is not None else None,
         "artifact_sha256": None,
         "summary": {
             "total": len(findings),

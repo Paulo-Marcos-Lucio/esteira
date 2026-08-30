@@ -166,6 +166,31 @@ esteira rules
 | `--fail-on` | `high` | `critical` afrouxa o portão; `low`/`medium` aperta. `none` nunca falha (só relata) |
 | `--only` | *(todas)* | foca uma triagem numa ou mais checagens (id da coluna `esteira rules`); id desconhecido → exit 2 |
 | `--skip` | *(nenhuma)* | silencia uma checagem ruidosa no seu contexto sem desligar o resto |
+| `--perfil` | *(nenhum)* | `oss-publico` ou `interno` — ajusta severidade pelo contexto real do repositório (ver abaixo) |
+
+### Perfis de severidade (`--perfil`)
+
+O catálogo declara UMA severidade padrão por checagem, mas o mesmo achado não pesa igual em
+todo contexto. Um runner self-hosted é uma porta aberta num repositório público — qualquer
+PR de fork de qualquer pessoa o aciona; no mesmo repositório fechado ao público, só quem já
+tem push consegue abrir PR, e o risco vira só higiene de infraestrutura própria.
+
+```bash
+esteira scan . --perfil oss-publico   # PRs de qualquer pessoa, de fora
+esteira scan . --perfil interno       # só quem já tem push abre PR
+```
+
+O que muda, por checagem (padrão do catálogo → perfil):
+
+- **`self-hosted-runner`**: 🟡 Média → 🔴 Crítica em `oss-publico`; → 🔵 Baixa em `interno`.
+- **`dangerous-trigger`**: 🔵 Baixa → 🟡 Média em `oss-publico`; sem mudança em `interno`.
+- **`missing-permissions`**: 🔵 Baixa → 🟡 Média em `oss-publico`; sem mudança em `interno`.
+
+O perfil aplicado sai no envelope (`profile` no JSON e no SARIF, `null` quando a flag não é
+usada) e cada achado ajustado carrega a **justificativa** de por que mudou (`severity_note`
+no JSON, um painel próprio no console) — uma severidade diferente do catálogo nunca aparece
+como número mudo. Checagens fora desta tabela (injeção, segredo exposto, pinagem de
+supply-chain) pesam igual em qualquer contexto e nenhum perfil as toca.
 
 ### Supressão inline (por linha)
 
