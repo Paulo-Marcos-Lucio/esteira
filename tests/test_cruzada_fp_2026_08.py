@@ -37,13 +37,30 @@ def test_add_mask_nao_e_vazamento(tmp_path: Path) -> None:
     assert "secret-in-run" not in _ids(tmp_path, _run('echo "::add-mask::${{ secrets.API_KEY }}"'))
 
 
-def test_echo_pipado_nao_vai_ao_log(tmp_path: Path) -> None:
+def test_pipe_a_consumidor_que_nao_reemite_nao_vai_ao_log(tmp_path: Path) -> None:
+    # Invariante REDUZIDO (era "echo pipado não vai ao log", classe FALSA — vide a contraprova
+    # abaixo `| tee /dev/stderr`). O verdadeiro é: pipe a um consumidor que NÃO reemite o stdin ao
+    # stdout (transforma/grava/consome) não leva o segredo ao log (FP 17).
     for cmd in (
         'echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > "$HOME/.kube/config"',
         "printf '%s' \"${{ secrets.GPG_KEY }}\" | gpg --batch --import",
         'echo -n "${{ secrets.SA_JSON }}" | jq -r .project_id',
     ):
         assert "secret-in-run" not in _ids(tmp_path, _run(cmd)), cmd
+
+
+def test_pipe_ou_redirect_a_sink_de_log_vaza(tmp_path: Path) -> None:  # contraprova positiva
+    # A CLASSE que o invariante antigo cristalizava como segura é, na verdade, vazamento: `tee`
+    # copia o stdin para o stdout, `cat` reemite, e `/dev/stderr|stdout`/`/proc/self/fd/1` SÃO o
+    # log do job — não "arquivo seguro". Todos DEVEM virar achado.
+    for cmd in (
+        'echo "token=${{ secrets.API_KEY }}" | tee /dev/stderr',
+        'echo "${{ secrets.API_KEY }}" | tee leak.txt',
+        'echo "${{ secrets.API_KEY }}" | cat',
+        'echo "${{ secrets.API_KEY }}" > /dev/stderr',
+        'echo "${{ secrets.API_KEY }}" > /proc/self/fd/1',
+    ):
+        assert "secret-in-run" in _ids(tmp_path, _run(cmd)), cmd
 
 
 def test_secret_em_comparacao_booleana_nao_vaza(tmp_path: Path) -> None:

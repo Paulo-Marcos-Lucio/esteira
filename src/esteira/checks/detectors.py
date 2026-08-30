@@ -115,17 +115,34 @@ _IWR_IEX = re.compile(
     r"\b(?:iex|invoke-expression)\b",
     re.IGNORECASE,
 )
+# Avaliadores POSIX que NÃO recebem código por stdin como um shell (`curl | bash`), mas rodam
+# código da rede por outras formas — ficam fora de `_INTERP` de propósito e ganham padrões próprios.
+# `source`/`.` executam um ARQUIVO/descritor; `eval` avalia uma STRING. Todos = CWE-494.
+_SOURCE = r"(?:source|\.)"
+# 5) `eval "$(curl …)"` / eval com backticks `eval \`wget …\``: a string avaliada vem da rede. O
+# `[^`)\n]*` impede o match de atravessar o `)`/backtick de fechamento e casar um curl não-relacionado.
+_EVAL_CURL = re.compile(_LEAD_CMD + r"eval\b[^\n]*?(?:\$\(|`)\s*[^`)\n]*?" + _CURL + r"\b")
+# 6) Substituição de processo para o avaliador de source: `. <(curl …)` / `source <(wget …)`.
+_SOURCE_PROCSUBST = re.compile(_LEAD_CMD + _SOURCE + r"\s+<\(\s*" + _WRAPPERS + _CURL + r"\b")
+# 7) Forma pipada para o avaliador de source: `curl … | . /dev/stdin` / `wget … | source …`.
+_CURL_PIPE_SOURCE = re.compile(
+    _LEAD_CMD + _WRAPPERS + _CURL + r"\b[^\n]*\|&?\s*" + _WRAPPERS + _SOURCE + r"(?=\s|$)"
+)
 
 
 def _curl_pipe_hit(text: str) -> bool:
     """Download da rede executado direto por um interpretador, em qualquer das variantes reais:
-    pipe (`curl|bash`), substituição de processo (`bash <(curl)`), de comando (`sh -c "$(curl)"`)
-    ou o par PowerShell `iwr|iex`. Todas equivalem a rodar código não verificado da rede (CWE-494)."""
+    pipe (`curl|bash`), substituição de processo (`bash <(curl)`), de comando (`sh -c "$(curl)"`),
+    o par PowerShell `iwr|iex`, ou os avaliadores POSIX `eval "$(curl)"` / `. <(curl)` / `curl | .`.
+    Todas equivalem a rodar código não verificado da rede (CWE-494)."""
     return bool(
         _CURL_PIPE.search(text)
         or _CURL_PROCSUBST.search(text)
         or _CURL_CMDSUBST.search(text)
         or _IWR_IEX.search(text)
+        or _EVAL_CURL.search(text)
+        or _SOURCE_PROCSUBST.search(text)
+        or _CURL_PIPE_SOURCE.search(text)
     )
 
 
@@ -592,9 +609,25 @@ def _anchor_line(wf: Workflow, command: str, fallback: str, cursor: int) -> int:
 
 # Escrita `name=value` para o arquivo $GITHUB_ENV / $GITHUB_OUTPUT.
 _GHFILE = re.compile(r"\$\{?GITHUB_(ENV|OUTPUT)\}?")
-# Substituição de comando `$( … )` / `` ` … ` `` (nível único): tratamos o que passa por ela
-# como potencialmente filtrado — o valor não é mais o texto cru do atacante.
+# Substituição de comando `$( … )` / `` ` … ` `` (nível único). NÃO é sanitizador por si só: só
+# neutraliza o taint quando o pipeline dentro dela contém um filtro allowlist REAL (`_SANITIZER`).
+# Identidade (`$(echo "$T")`) e truncamento (`| head`/`| cut`/`| awk '{print $1}'`) preservam o
+# texto do atacante — o valor continua cru.
 _CMD_SUBST = re.compile(r"\$\([^()]*\)|`[^`]*`")
+# Filtros que trocam o texto não-confiável por uma saída de charset/estrutura controlada — aí sim o
+# valor deixa de ser cru: `tr -c`/`tr -d` (complemento/deleção de charset), `sed 's/[^…]//'`
+# (apaga fora de um conjunto), `printf %q` (quoting), `jq -r` (extrai campo estruturado), `base64`
+# (encode), `sha*sum`/`shasum` (digest), `grep -o…`/`-E…-o` (só o trecho casado por regex fixa).
+_SANITIZER = re.compile(
+    r"\btr\s+-\S*[cd]"
+    r"|\bsed\b[^|`)]*s/\[\^"
+    r"|\bprintf\b[^|`)]*%q"
+    r"|\bjq\b[^|`)]*(?:^|\s)-r\b"
+    r"|\bbase64\b"
+    r"|\bsha(?:1|224|256|384|512)?sum\b|\bshasum\b"
+    r"|\bgrep\b[^|`)]*-\S*o",
+    re.IGNORECASE,
+)
 _ASSIGN = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*)=(.*)$", re.DOTALL)
 _ECHO_PREFIX = re.compile(r"^\s*(?:echo|printf)\b\s*(?:-[eEnr]+\s+)?(?:'%s(?:\\n)?'\s+)?", re.I)
 
@@ -610,7 +643,10 @@ def _tainted_env_vars(env_map: dict[str, Any]) -> set[str]:
 
 
 def _value_carries_taint(value: str, tainted_vars: set[str], env_map: dict[str, Any]) -> bool:
-    v = _CMD_SUBST.sub("", value)  # o que passou por $( … ) pode ter sido filtrado: não é cru
+    # Apaga uma substituição de comando SÓ quando ela sanitiza de verdade (filtro allowlist). Sem
+    # filtro, o `$( … )` é identidade/truncamento: preservamos o conteúdo para o taint ser visto lá
+    # dentro (`$(echo "$T")` continua carregando `$T`; `${{ github.event.* }}` cru continua cru).
+    v = _CMD_SUBST.sub(lambda m: "" if _SANITIZER.search(m.group(0)) else m.group(0), value)
     if _untrusted_hit(_resolve_env_refs(v, env_map)):
         return True
     return any(
@@ -859,6 +895,15 @@ _QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
 _SEPARADOR_DE_COMANDO = re.compile(r"\|\||&&|[;|]")
 # `$GITHUB_ENV` em qualquer das grafias que o shell aceita como alvo do redirecionamento.
 _GITHUB_ENV = re.compile(r"\$\{?GITHUB_ENV\}?")
+# Alvos de redirecionamento que são dispositivos de terminal/console: escrever neles é ir ao LOG
+# do job — NÃO gravar um "arquivo seguro". Cobre /dev/stderr|stdout, /dev/fd/{1,2} e
+# /proc/{self,PID}/fd/{1,2}. As duplicações de descritor `>&1`/`>&2` já caem no ramo de log porque
+# `_REDIRECT_TO_FILE` não casa `>&` (o `&` seguinte é rejeitado pelo `[^\s&|;]`).
+_LOG_DEVICE = re.compile(r"^(?:/dev/(?:stderr|stdout|fd/[12])|/proc/(?:self|[0-9]+)/fd/[12])$")
+# Re-emissores puros: copiam o stdin de volta ao stdout. `tee` SEMPRE (e ainda grava no arquivo);
+# `cat`/`tac`/`nl`/`rev` quando NÃO redirecionam a saída a um arquivo. Um `| jq`/`| base64 -d`/
+# `| gpg` transforma ou CONSOME o segredo — não o reimprime cru (é o que preserva a classe FP 17).
+_REEMIT_CMD = re.compile(r"^\s*(?:sudo\s+|command\s+)*(cat|tac|nl|rev|tee)\b", re.IGNORECASE)
 # Comandos que imprimem no stdout — o segredo vai para o log do job. O `run:` depende do SHELL do
 # step: `echo`/`printf` no bash, `Write-Host`/`Write-Output` no pwsh, `print(...)` no python. Um
 # `echo` do bash não imprime nada num step `shell: python`, e um `print` do python não é comando
@@ -909,6 +954,52 @@ def _segmento(neutro: str, pos: int) -> tuple[int, int]:
     return inicio, fim
 
 
+def _pipeline_reemite_ao_log(neutro: str, pipe_pos: int) -> bool:
+    """A cauda do pipeline a partir de ``pipe_pos`` (um ``|``) reimprime o stdin no stdout/log?
+
+    Verdadeiro se ALGUM estágio: chama ``tee`` (copia p/ o stdout, com ou sem arquivo); é um
+    re-emissor puro (``cat``/``tac``/``nl``/``rev``) SEM redirecionar a arquivo; ou redireciona a
+    um dispositivo de log (``> /dev/stderr``). Falso para ``| jq``/``| base64 -d > f``/``| gpg``
+    (FP 17): transformam ou consomem o segredo em vez de o reemitir cru.
+    """
+    tail = neutro[pipe_pos:]
+    term = re.search(r";|&&|\|\|", tail)  # a cauda vai até o próximo terminador de comando
+    if term is not None:
+        tail = tail[: term.start()]
+    for stage in tail.split("|"):
+        if not stage.strip():
+            continue
+        alvo = _REDIRECT_TARGET.search(stage)
+        if alvo is not None and _LOG_DEVICE.match(alvo.group(1).strip("\"'")):
+            return True
+        m = _REEMIT_CMD.match(stage)
+        if m is None:
+            continue
+        if m.group(1).lower() == "tee":
+            return True  # tee sempre copia para o stdout, mesmo com arquivo
+        if _REDIRECT_TO_FILE.search(stage) is None:
+            return True  # cat/tac/nl/rev SEM arquivo de destino imprime no stdout/log
+    return False
+
+
+def _heredoc_vai_ao_log(neutro: str) -> bool:
+    """O corpo de um heredoc cujo cabeçalho (neutralizado) é ``neutro`` chega ao stdout/log?
+
+    Sim quando: não há redirecionamento e não há pipe; há redirect a um dispositivo de log
+    (``cat <<EOF > /dev/stderr``); ou a cauda do pipeline reemite (``cat <<EOF | tee …``). Não
+    quando o cabeçalho manda o corpo a um arquivo comum (``> resumo.md``, ``>> $GITHUB_STEP_SUMMARY``)
+    ou o pipa a um consumidor que não reemite.
+    """
+    redir = _REDIRECT_TO_FILE.search(neutro)
+    if redir is not None:
+        alvo = _REDIRECT_TARGET.search(neutro[redir.start() :])
+        return alvo is not None and _LOG_DEVICE.match(alvo.group(1).strip("\"'")) is not None
+    pipe = re.search(r"\|(?!\|)", neutro)
+    if pipe is not None:
+        return _pipeline_reemite_ao_log(neutro, pipe.start())
+    return True
+
+
 def _secret_echo_leak(line: str, sink: str = "run", shell: str = "bash") -> str | None:
     """Classifica o vazamento da linha: ``"log"``, ``"github-env"`` ou ``None``.
 
@@ -949,17 +1040,22 @@ def _secret_echo_leak(line: str, sink: str = "run", shell: str = "bash") -> str 
             continue  # `echo "::add-mask::${{ secrets.X }}"` MASCARA o segredo (FP 16), nao vaza
         redirecionamento = _REDIRECT_TO_FILE.search(neutro, expr.end(), fim)
         if redirecionamento is None:
-            # stdout do echo PIPADO para outro comando que grava em arquivo (`echo secret |
-            # base64 -d > file`) nao vai ao log (FP 17). Piped sem gravacao em arquivo depois
-            # pode ainda imprimir, entao so e seguro com um redirecionamento a arquivo adiante.
+            # stdout do echo PIPADO. Só é seguro se o consumidor NÃO reemite o stdin ao log
+            # (`base64 -d > f`, `gpg`, `jq` — FP 17). Se a cauda reemite (`| tee`, `| cat`, ou um
+            # redirect a dispositivo de log), o segredo vai para o log tal qual um echo cru.
             if fim < len(neutro) and neutro[fim] == "|" and neutro[fim : fim + 2] != "||":
-                continue  # stdout do echo vai para o PIPE (gpg/jq/base64/...), nao para o log (FP 17)
+                if _pipeline_reemite_ao_log(neutro, fim):
+                    return "log"
+                continue
             return "log"
         if _GITHUB_ENV.search(line[redirecionamento.start() : fim]):
             return "github-env"
-        # Redirecionado para arquivo comum (`printf '%s' "${{secrets.KEY}}" > id_deploy`):
-        # padrão canônico e seguro de instalar um segredo em disco. Segue para a próxima
-        # expressão da linha em vez de encerrar — pode haver um segundo segredo depois.
+        # Redirect a dispositivo de terminal/console (`> /dev/stderr`, `> /proc/self/fd/1`) é LOG,
+        # não arquivo seguro. Arquivo comum (`printf … > id_deploy`) é o idioma canônico de instalar
+        # o segredo em disco (FP 28): segue para a próxima expressão (pode haver outro segredo).
+        alvo = _REDIRECT_TARGET.search(line[redirecionamento.start() : fim])
+        if alvo is not None and _LOG_DEVICE.match(alvo.group(1).strip("\"'")):
+            return "log"
     return None
 
 
@@ -978,8 +1074,10 @@ def _secret_heredoc_leaks(wf: Workflow, cursor: int) -> list[Finding]:
 
     O caminho linha-a-linha não pega isto: o `cat`/`<<EOF` está numa linha e o segredo em OUTRA
     (o corpo). `cat` de heredoc SEM `> arquivo` nem pipe imprime o corpo no log do job — o mesmo
-    vazamento de um `echo`. Se o cabeçalho redireciona a arquivo (`cat <<EOF >> "$GITHUB_STEP_
-    SUMMARY"`) ou pipa, o corpo não vai ao log e nada é reportado (classe FP 11)."""
+    vazamento de um `echo`. Se o cabeçalho manda o corpo a um arquivo comum (`cat <<EOF >> "$GITHUB_
+    STEP_SUMMARY"`) ou o pipa a um consumidor que não reemite, o corpo não vai ao log (classe FP 11);
+    mas `| tee`, `| cat` ou `> /dev/stderr` reemitem ao log e continuam sendo vazamento (`_heredoc_
+    vai_ao_log`)."""
     out: list[Finding] = []
     for step, _env in _step_contexts(wf.data):
         if _step_shell(step) != "bash":
@@ -996,9 +1094,7 @@ def _secret_heredoc_leaks(wf: Workflow, cursor: int) -> list[Finding]:
                 continue
             delim = header.group(2)
             neutro = _neutraliza_aspas(lines[i])
-            to_stdout = _REDIRECT_TO_FILE.search(neutro) is None and not re.search(
-                r"\|(?!\|)", neutro
-            )
+            to_stdout = _heredoc_vai_ao_log(neutro)
             j = i + 1
             while j < len(lines) and lines[j].strip() != delim:
                 if to_stdout and _line_has_secret(lines[j]):
