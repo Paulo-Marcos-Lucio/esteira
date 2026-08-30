@@ -165,6 +165,26 @@ _USES_LINE = re.compile(r"""uses:\s*['"]?([^'"\s@]+)@([^'"\s}\],]+)""")
 # Prefixo `- run:` de uma linha crua, removido no fallback para o comando voltar à posição 0.
 _RUN_KEY = re.compile(r"^\s*-?\s*run:\s*")
 _FIRST_PARTY = {"actions", "github"}
+# Actions cujo trabalho É auditar/vigiar o pipeline. Uma tag móvel comprometida aqui não é
+# supply-chain genérico: é o próprio scanner de segurança do job sendo trocado por um
+# mentiroso — silencia achado, ou pior, exfiltra segredo do job que roda com mais confiança
+# no repositório. Prefixo (não igualdade) porque o CodeQL publica sub-ações
+# ('github/codeql-action/init', '/analyze', '/upload-sarif') sob o mesmo repositório.
+_SECURITY_TOOL_ACTIONS = (
+    "github/codeql-action",
+    "aquasecurity/trivy-action",
+    "gitleaks/gitleaks-action",
+    "semgrep/semgrep-action",
+    "returntocorp/semgrep-action",  # nome anterior à migração para a org semgrep/
+    "checkmarx/kics-github-action",
+)
+
+
+def _is_security_tool_action(action: str) -> bool:
+    lowered = action.lower()
+    return any(lowered == p or lowered.startswith(p + "/") for p in _SECURITY_TOOL_ACTIONS)
+
+
 # Referência a um segredo dentro de uma expressão: qualquer secrets.X ou o github.token.
 _SECRET_REF = re.compile(r"\bsecrets\.[A-Za-z_]\w*|\bgithub\.token\b", re.IGNORECASE)
 # Identificador final de um contexto (github.event.issue.title → title) p/ nomear a env var.
@@ -1148,6 +1168,14 @@ def _uses_finding(
         # Reusable workflow: pinar por SHA é ideal, mas @branch dentro da org é comum/aceito.
         check = "unpinned-reusable-workflow"
         detail = f"reusable workflow '{action}' fixado por '{ref}' (não é SHA)."
+    elif _is_security_tool_action(action):
+        # Checada ANTES de primeira/terceira parte: o CodeQL é 'github/…' (primeira parte),
+        # mas continua sendo uma ferramenta de segurança — a categoria pesa mais que o dono.
+        check = "unpinned-security-action"
+        detail = (
+            f"'{action}' (ferramenta de segurança) fixada por '{ref}' (não é SHA) — "
+            "tag móvel aqui compromete o próprio scanner do pipeline."
+        )
     else:
         owner = action.split("/", 1)[0]
         first = owner in _FIRST_PARTY
