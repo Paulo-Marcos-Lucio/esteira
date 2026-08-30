@@ -273,6 +273,31 @@ def _normalize_brackets(text: str) -> str:
     return _BRACKET.sub(r".\1", text)
 
 
+# Funcoes/operadores cujo RESULTADO e booleano (true/false), nao o texto de entrada. Um
+# contexto nao-confiavel dentro deles nao e injetavel (o output e um bool), e um segredo dentro
+# deles nao vaza o VALOR (vaza so "true"/"false"). Classes FP 18 (script-injection) e 30
+# (secret-in-run): `${{ contains(github.event.title, 'x') }}` e `${{ secrets.K != '' }}`.
+_BOOL_FUNCS = (
+    "contains(",
+    "startswith(",
+    "endswith(",
+    "always(",
+    "success(",
+    "failure(",
+    "cancelled(",
+)
+_COMPARACAO = re.compile(r"==|!=|<=|>=|(?<![<>=!])[<>](?![=])")
+
+
+def _expr_resulta_booleano(inner: str) -> bool:
+    """O conteudo de um `${{ ... }}` avalia para um BOOLEANO (comparacao ou funcao booleana
+    envolvendo tudo)? Entao nao carrega o texto/segredo de entrada para a saida."""
+    s = inner.strip().lower()
+    if _COMPARACAO.search(s):
+        return True
+    return s.endswith(")") and any(s.startswith(fn) for fn in _BOOL_FUNCS)
+
+
 def _untrusted_hit(text: str) -> str | None:
     """Retorna o primeiro contexto não-confiável presente em ``text`` (ou None)."""
     normalized = _normalize_brackets(text).lower()
@@ -471,6 +496,8 @@ def check_script_injection(wf: Workflow) -> list[Finding]:
                 hit = _untrusted_hit(resolved)
                 if hit is None:
                     continue
+                if _expr_resulta_booleano(match.group(1)):
+                    continue  # ${{ contains(...) }} / comparacao: resultado booleano, nao injetavel
                 evidence = match.group(0).strip()
                 at = _anchor_line(wf, _containing_line(text, match), evidence, cursor)
                 cursor = at + 1
@@ -618,11 +645,20 @@ def _secret_echo_leak(line: str, sink: str = "run") -> str | None:
     for expr in _EXPR.finditer(line):
         if "secrets." not in expr.group(1):
             continue
+        if _expr_resulta_booleano(expr.group(1)):
+            continue  # `secrets.K != ''` imprime true/false, nao o segredo (FP 30)
         inicio, fim = _segmento(neutro, expr.start())
         if not any(cmd in lowered[inicio : expr.start()] for cmd in comandos):
             continue  # o `echo` desta linha está em OUTRO comando: não é ele que imprime
+        if "::add-mask::" in lowered[inicio:fim]:
+            continue  # `echo "::add-mask::${{ secrets.X }}"` MASCARA o segredo (FP 16), nao vaza
         redirecionamento = _REDIRECT_TO_FILE.search(neutro, expr.end(), fim)
         if redirecionamento is None:
+            # stdout do echo PIPADO para outro comando que grava em arquivo (`echo secret |
+            # base64 -d > file`) nao vai ao log (FP 17). Piped sem gravacao em arquivo depois
+            # pode ainda imprimir, entao so e seguro com um redirecionamento a arquivo adiante.
+            if fim < len(neutro) and neutro[fim] == "|" and neutro[fim : fim + 2] != "||":
+                continue  # stdout do echo vai para o PIPE (gpg/jq/base64/...), nao para o log (FP 17)
             return "log"
         if _GITHUB_ENV.search(line[redirecionamento.start() : fim]):
             return "github-env"
@@ -1022,7 +1058,14 @@ def check_permissions(wf: Workflow) -> list[Finding]:
     multi_job = len(jobs) > 1
 
     cursor = 1
-    found, cursor = _broad_permissions(wf, data.get("permissions"), "workflow", multi_job, cursor)
+    # 08: o write de nivel de workflow so e "amplo" se ALGUM job herda. Se todo job declara
+    # seu proprio bloco permissions:, nenhum herda os escopos do workflow -> nao e achado.
+    algum_job_herda = (not jobs) or any(
+        not (isinstance(j, dict) and "permissions" in j) for j in jobs.values()
+    )
+    found, cursor = _broad_permissions(
+        wf, data.get("permissions"), "workflow", multi_job, cursor, herdado=algum_job_herda
+    )
     out += found
     for name, job in jobs.items():
         if isinstance(job, dict) and "permissions" in job:
@@ -1057,7 +1100,7 @@ def check_permissions(wf: Workflow) -> list[Finding]:
 
 
 def _broad_permissions(
-    wf: Workflow, perms: Any, scope: str, multi_job: bool, cursor: int = 1
+    wf: Workflow, perms: Any, scope: str, multi_job: bool, cursor: int = 1, *, herdado: bool = True
 ) -> tuple[list[Finding], int]:
     """Achados de permissão ampla + o cursor avançado.
 
@@ -1079,10 +1122,14 @@ def _broad_permissions(
         ], at + 1
     # Escopos de escrita específicos só são 'amplos' no nível do workflow com vários jobs
     # (todos herdam). Um write por-job (ou de workflow com um só job) é o mínimo recomendado.
-    if isinstance(perms, dict) and scope == "workflow" and multi_job:
+    if isinstance(perms, dict) and scope == "workflow" and multi_job and herdado:
         writes = sorted((str(k) for k, v in perms.items() if v == "write"), key=str)
         if writes:
-            at = wf.find_line("permissions", start=cursor)
+            linha_do_bloco = wf.find_line("permissions", start=cursor)
+            # 34: ancorar na linha do ESCOPO de escrita (onde o mantenedor escreve o
+            # `# zizmor: ignore`, como em campo), nao na linha do `permissions:` — senao a
+            # supressao inline do usuario e ignorada. Cai de volta na linha do bloco se nao achar.
+            at = wf.find_line(f"{writes[0]}", start=linha_do_bloco)
             return [
                 make_finding(
                     "broad-permissions",
@@ -1117,7 +1164,15 @@ def check_self_hosted(wf: Workflow) -> list[Finding]:
                     evidence="self-hosted",
                 )
             )
-        elif isinstance(runs_on, dict) and "group" in runs_on:
+        elif (
+            isinstance(runs_on, dict)
+            and "group" in runs_on
+            and not _grupo_parece_github_hosted(str(runs_on["group"]))
+        ):
+            # `runs-on: group: X` nao implica self-hosted: os larger runners GITHUB-HOSTED
+            # tambem usam grupos (ex.: `ubuntu-runners`). So sinalizamos quando o nome do grupo
+            # NAO carrega um token de SO GitHub-hosted — um grupo de hardware/on-prem
+            # (`amd-mi300-1gpu`, `on-prem`) segue apontado; `ubuntu-runners` nao (FP 20).
             group = str(runs_on["group"])
             at = wf.find_line("group", start=cursor)
             cursor = at + 1
@@ -1126,11 +1181,21 @@ def check_self_hosted(wf: Workflow) -> list[Finding]:
                     "self-hosted-runner",
                     wf.path,
                     at,
-                    f"Job usa runner group '{group}' (grupos organizam runners self-hosted).",
+                    f"Job usa runner group '{group}' (grupos costumam organizar runners self-hosted; "
+                    "confirme se nao e um grupo de larger runners GitHub-hosted).",
                     evidence=f"group: {group}",
                 )
             )
     return out
+
+
+_GH_HOSTED_GROUP_HINTS = ("ubuntu", "windows", "macos", "linux")
+
+
+def _grupo_parece_github_hosted(group: str) -> bool:
+    """Nome de runner group com token de SO GitHub-hosted (larger runner), nao self-hosted."""
+    g = group.lower()
+    return any(h in g for h in _GH_HOSTED_GROUP_HINTS)
 
 
 def _runs_on_labels_resolved(job: dict[str, Any]) -> list[str]:
