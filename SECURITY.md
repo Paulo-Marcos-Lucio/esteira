@@ -24,3 +24,7 @@ Auditar pipeline de terceiro **sem autorização por escrito** é crime no Brasi
 - **Lei 13.709/2018** (LGPD): se o relatório contiver dado pessoal, você é agente de tratamento e responde por ele.
 
 Use o Esteira em pipelines que você mantém ou tem **autorização formal, com escopo e período definidos**, para revisar. Guarde essa autorização.
+
+## Modelo de ameaças da suíte
+
+Como a suíte AppSec se defende de um alvo hostil — e o que ainda não está fechado — está documentado em [`modelo-de-ameacas.md`](https://github.com/Paulo-Marcos-Lucio/sentinela/blob/main/docs/modelo-de-ameacas.md), no repositório da [Sentinela](https://github.com/Paulo-Marcos-Lucio/sentinela): é ela quem tem superfície de rede (fala HTTP com o alvo escolhido pelo operador). O Esteira lê arquivo de workflow local — não recebe resposta de rede arbitrária —, mas compartilha a mesma classe de ameaça de negação de serviço por entrada hostil (ver **Escopo** acima): o arquivo de workflow pode vir de um PR de terceiro.
