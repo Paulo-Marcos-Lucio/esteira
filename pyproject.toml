@@ -20,7 +20,7 @@ classifiers = [
   "Topic :: Security",
 ]
 dependencies = [
-  "typer>=0.27.1",
+  "typer>=0.27.2",
   "rich>=15.0.0",
   "PyYAML>=6.0.3",
 ]
@@ -33,9 +33,9 @@ dependencies = [
 dev = [
   "pytest>=9.1.1",
   "pytest-cov>=7.1.0",
-  "ruff>=0.16.4",
+  "ruff>=0.16.5",
   "mypy>=2.3.1",
-  "hypothesis>=6.165.10",
+  "hypothesis>=6.167.0",
   "types-PyYAML>=6.0.12.20260815",
 ]
 
