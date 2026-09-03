@@ -89,6 +89,8 @@ def test_ruleset_hash_muda_quando_a_severidade_de_uma_regra_muda(
             original.recommendation,
             original.owasp,
             original.cwe,
+            finding_type=original.finding_type,
+            confidence=original.confidence,
         ),
     )
     assert provenance.ruleset_hash() != antes

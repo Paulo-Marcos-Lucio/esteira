@@ -17,7 +17,7 @@ import pytest
 
 from esteira.checks.catalog import CATALOG, OWASP_EDITION
 from esteira.checks.engine import scan
-from esteira.core.models import Severity
+from esteira.core.models import Confidence, FindingType, Severity
 
 _SHA = "b4ffde65f46336ab88eb53be808477a3936bae11"
 _RAIZ = Path(__file__).resolve().parent.parent
@@ -153,6 +153,22 @@ def test_toda_checagem_tem_recomendacao_e_cwe() -> None:
         if not meta.recommendation.strip() or not (meta.cwe or "").startswith("CWE-")
     }
     assert sem_metadado == {}
+
+
+def test_toda_checagem_declara_type_e_confidence() -> None:
+    """EV-12: `type`/`confidence` no `-f json` só é contrato de verdade se NENHUMA checagem
+    puder escapar sem declará-los. `CheckMeta.finding_type`/`.confidence` já são `kw_only`
+    obrigatórios (uma checagem nova sem os dois quebra a IMPORTAÇÃO do módulo, antes deste
+    teste rodar) — mas isso protege contra omissão, não contra um valor fora do enum entrando
+    por fora do dataclass. Este teste é o que falha, com a mensagem certa, se isso acontecer.
+    """
+    sem_type_ou_confidence = [
+        cid
+        for cid, meta in CATALOG.items()
+        if not isinstance(meta.finding_type, FindingType)
+        or not isinstance(meta.confidence, Confidence)
+    ]
+    assert sem_type_ou_confidence == []
 
 
 # --------------------------------------------------------------------------- #
