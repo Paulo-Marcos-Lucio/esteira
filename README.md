@@ -46,6 +46,7 @@ esta tabela divergir do catálogo, inclusive na severidade).
 | --- | --- | --- | --- |
 | `script-injection` | Contexto não-confiável (`github.event.*`, `head_ref`) no `run` | 🔴 Crítica | A05 · CWE-94 |
 | `pull-request-target-checkout` | checkout de código de PR em `pull_request_target` | 🔴 Crítica | A08 · CWE-94 |
+| `unpinned-security-action` | Ferramenta de segurança (CodeQL, Trivy, Gitleaks, Semgrep, KICS…) por tag, não por SHA | 🔴 Crítica | A03 · CWE-1357 |
 | `unpinned-action-thirdparty` | Action de terceiros por tag, não por SHA | 🟠 Alta | A03 · CWE-1357 |
 | `secret-to-thirdparty-action` | `GITHUB_TOKEN`/segredo via `with:` para action de terceiros **não** fixada por SHA | 🟠 Alta | A03 · CWE-522 |
 | `broad-permissions` | `write-all` / escopos de escrita globais | 🟠 Alta | A01 · CWE-732 |

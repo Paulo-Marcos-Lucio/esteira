@@ -61,6 +61,17 @@ CATALOG: dict[str, CheckMeta] = {
             "CWE-1357",
         ),
         CheckMeta(
+            "unpinned-security-action",
+            "Ferramenta de segurança (SAST/scanner) não fixada por SHA",
+            Severity.CRITICAL,
+            "Fixe a action de segurança (CodeQL, Trivy, Gitleaks, Semgrep, KICS…) por SHA de "
+            "commit completo. Uma tag móvel comprometida nessa categoria não é supply-chain "
+            "genérico: é o próprio scanner do pipeline sendo trocado — silencia achado real ou "
+            "exfiltra segredo do job, que costuma rodar com mais permissão que o resto do CI.",
+            "A03:2025 Software Supply Chain Failures",
+            "CWE-1357",
+        ),
+        CheckMeta(
             "broad-permissions",
             "Permissões amplas do GITHUB_TOKEN",
             Severity.HIGH,

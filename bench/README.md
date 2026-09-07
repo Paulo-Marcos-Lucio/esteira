@@ -17,9 +17,9 @@ detecção coberta aqui quebra o CI antes do merge — corpus que ninguém roda 
 
 | | Quantidade | O que é |
 |---|---|---|
-| `positivos/` | 17 arquivos · **19 achados rotulados** | Um workflow por checagem do catálogo, endurecido em todo o resto para isolar o defeito. Inclui as duas faces do `secret-in-run` (impressão no stdout · export para `$GITHUB_ENV`) |
+| `positivos/` | 19 arquivos · **21 achados rotulados** | Um workflow por checagem do catálogo, endurecido em todo o resto para isolar o defeito. Inclui as duas faces do `secret-in-run` (impressão no stdout · export para `$GITHUB_ENV`) |
 | `negativos/` | 5 arquivos · **8 linhas-armadilha** | Workflow endurecido (SHA-pin + `permissions`), guarda de segredo `[ -n … ] \|\| echo`, instalação de segredo em disco e por `--password-stdin`, supressão inline justificada, `container` por digest e `${{ matrix.* }}` via `env:` |
-| `manifest.json` | 27 entradas | Rótulo de verdade: arquivo, linha, `eh_achado`, `regra`, e a `nota` que justifica a adjudicação |
+| `manifest.json` | 29 entradas | Rótulo de verdade: arquivo, linha, `eh_achado`, `regra`, e a `nota` que justifica a adjudicação |
 
 O casamento exige a **regra certa**, não só a linha certa: um achado na linha esperada com o id
 errado conta como falso-positivo *e* como falso-negativo. É a regra que vai para a aba Security

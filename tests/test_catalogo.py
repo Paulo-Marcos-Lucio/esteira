@@ -38,6 +38,9 @@ CASOS_POSITIVOS: dict[str, str] = {
         trigger="pull_request_target",
     ),
     "unpinned-action-thirdparty": _steps("    steps:\n      - uses: some-org/evil-action@v1\n"),
+    "unpinned-security-action": _steps(
+        "    steps:\n      - uses: aquasecurity/trivy-action@0.24.0\n"
+    ),
     "unpinned-action-firstparty": _steps("    steps:\n      - uses: actions/checkout@v4\n"),
     "unpinned-reusable-workflow": (
         "on: push\npermissions: {}\njobs:\n  a:\n"
@@ -108,6 +111,7 @@ SEVERIDADES: dict[str, Severity] = {
     "script-injection": Severity.CRITICAL,
     "pull-request-target-checkout": Severity.CRITICAL,
     "unpinned-action-thirdparty": Severity.HIGH,
+    "unpinned-security-action": Severity.CRITICAL,
     "secret-to-thirdparty-action": Severity.HIGH,
     "broad-permissions": Severity.HIGH,
     "secret-in-run": Severity.HIGH,
