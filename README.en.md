@@ -167,6 +167,31 @@ esteira rules
 | `--fail-on` | `high` | `critical` loosens the gate; `low`/`medium` tightens it. `none` never fails (report only) |
 | `--only` | *(all)* | focuses a triage on one or more checks (id from the `esteira rules` column); unknown id → exit 2 |
 | `--skip` | *(none)* | silences a check that's noisy in your context without turning off the rest |
+| `--perfil` | *(none)* | `oss-publico` or `interno` — adjusts severity by the repository's real context (see below) |
+
+### Severity profiles (`--perfil`)
+
+The catalog declares ONE default severity per check, but the same finding doesn't weigh the
+same in every context. A self-hosted runner is an open door on a public repo — any fork PR
+from anyone triggers it; on the same repo closed to the public, only people who already have
+push access can open a PR, and the risk becomes just infrastructure hygiene.
+
+```bash
+esteira scan . --perfil oss-publico   # PRs from anyone, from outside
+esteira scan . --perfil interno       # only people who already have push open PRs
+```
+
+What changes, per check (catalog default → profile):
+
+- **`self-hosted-runner`**: 🟡 Medium → 🔴 Critical under `oss-publico`; → 🔵 Low under `interno`.
+- **`dangerous-trigger`**: 🔵 Low → 🟡 Medium under `oss-publico`; unchanged under `interno`.
+- **`missing-permissions`**: 🔵 Low → 🟡 Medium under `oss-publico`; unchanged under `interno`.
+
+The applied profile is in the envelope (`profile` in JSON and SARIF, `null` when the flag
+isn't used), and every adjusted finding carries the **justification** for why it changed
+(`severity_note` in JSON, its own panel on the console) — a severity that differs from the
+catalog never shows up as a mute number. Checks outside this table (injection, exposed
+secrets, supply-chain pinning) weigh the same in any context, and no profile touches them.
 
 ### Inline suppression (per line)
 

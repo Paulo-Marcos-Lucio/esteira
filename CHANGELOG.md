@@ -3,6 +3,21 @@
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Perfis de severidade por contexto** (`--perfil oss-publico|interno`, estado/HANDOFF-2026-08-05
+  §5 Onda 2, personas D01): o catálogo declara uma severidade padrão por checagem, mas o mesmo
+  achado não pesa igual em todo contexto — `self-hosted-runner` é vetor de execução externa num
+  repositório público (qualquer PR de fork o aciona) e é só higiene de infraestrutura própria num
+  repositório interno (só quem já tem push abre PR). `--perfil oss-publico` sobe
+  `self-hosted-runner` (MEDIUM→CRITICAL), `dangerous-trigger` e `missing-permissions`
+  (LOW→MEDIUM); `--perfil interno` desce `self-hosted-runner` (MEDIUM→LOW). O perfil aplicado sai
+  no envelope (`profile` no JSON/SARIF) e cada achado ajustado carrega a justificativa
+  (`severity_note`) — nunca um número mudo. Testes property-based (Hypothesis) provam que a
+  severidade de `self-hosted-runner` depende só do perfil, para qualquer nome de job/step/comando.
+
 ## [0.5.0] — 2026-08-05
 
 ### Adicionado

@@ -29,6 +29,21 @@ _RANK: dict[Severity, int] = {
 }
 
 
+class Profile(str, Enum):
+    """Contexto do repositório varrido, para ajustar severidade por risco real.
+
+    O catálogo declara UMA severidade padrão por checagem, mas o mesmo achado
+    não pesa igual em todo contexto — um runner self-hosted é vetor de
+    execução externa num repositório público (qualquer PR de fork o aciona) e
+    é só higiene de infraestrutura própria num repositório interno, onde
+    só quem já tem push abre PR. `checks/profiles.py` é a fonte declarada de
+    quais checagens mudam, para qual severidade, e por quê.
+    """
+
+    OSS_PUBLICO = "oss-publico"
+    INTERNO = "interno"
+
+
 @dataclass(frozen=True)
 class Finding:
     check_id: str
@@ -45,6 +60,10 @@ class Finding:
     # script-injection). Complementa a 'recommendation' genérica do catálogo; None quando
     # a checagem não gera uma sugestão acionável por achado.
     fix_suggestion: str | None = None
+    # Por que a severidade aqui difere do padrão do catálogo — preenchido só quando
+    # `checks/profiles.py` ajustou este achado. Sem isto, uma severidade diferente do
+    # `rules()` do CATALOG pareceria erro de relatório, não decisão declarada de perfil.
+    severity_note: str | None = None
 
 
 @dataclass
@@ -83,6 +102,9 @@ class ScanResult:
     # `esteira scan /outro/repo` rodando de dentro deste repo carimbaria o commit errado —
     # o pior tipo de metadado, o que parece certo.
     root: str | None = None
+    # Perfil de severidade aplicado (`None` = nenhum, severidades puras do catálogo).
+    # Carregado até o envelope para a mudança de severidade nunca ficar implícita.
+    profile: Profile | None = None
 
     def max_severity(self) -> Severity | None:
         if not self.findings:

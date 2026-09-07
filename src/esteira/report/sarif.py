@@ -89,6 +89,8 @@ def _result(finding: Finding, ordinal: int) -> dict[str, Any]:
     message = f"{finding.detail} {finding.recommendation}"
     if finding.fix_suggestion is not None:
         message += f" {finding.fix_suggestion}"
+    if finding.severity_note is not None:
+        message += f" Severidade ajustada: {finding.severity_note}"
     region: dict[str, Any] = {"startLine": max(finding.line, 1)}
     if finding.evidence:
         region["snippet"] = {"text": finding.evidence}
@@ -128,6 +130,7 @@ def to_sarif(result: ScanResult) -> str:
         "owasp_edition": OWASP_EDITION,
         "commit": provenance.commit(result.root),
         "ruleset_hash": provenance.ruleset_hash(),
+        "profile": result.profile.value if result.profile is not None else None,
         "artifact_sha256": None,
     }
     document: dict[str, Any] = {

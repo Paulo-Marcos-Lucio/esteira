@@ -15,7 +15,7 @@ from rich.text import Text
 from esteira import __version__
 from esteira.checks.catalog import CATALOG, OWASP_EDITION
 from esteira.checks.engine import scan as run_scan
-from esteira.core.models import ScanResult, Severity
+from esteira.core.models import Profile, ScanResult, Severity
 from esteira.report import console as console_report
 from esteira.report.json_report import to_json
 from esteira.report.sarif import to_sarif
@@ -85,6 +85,12 @@ def scan(
     fail_on: FailOn = typer.Option(FailOn.high, "--fail-on", help="Severidade que faz sair com 1."),
     only: list[str] = typer.Option([], "--only", help="Roda apenas estas checagens."),
     skip: list[str] = typer.Option([], "--skip", help="Pula estas checagens."),
+    perfil: Profile | None = typer.Option(
+        None,
+        "--perfil",
+        help="Ajusta severidade pelo contexto do repositório (oss-publico ou interno). "
+        "Sem a opção, severidade pura do catálogo.",
+    ),
 ) -> None:
     """Audita os workflows do GitHub Actions."""
     unknown = sorted((set(only) | set(skip)) - set(CATALOG))
@@ -98,7 +104,7 @@ def scan(
     if fmt is Format.console and output is not None:
         raise typer.BadParameter("só faz sentido com --format json|sarif.", param_hint="--output")
 
-    result = run_scan(path, only=only or None, skip=skip or None)
+    result = run_scan(path, only=only or None, skip=skip or None, profile=perfil)
     if result.files_scanned == 0:
         # Aviso em stderr, NÃO no código de saída: o caminho existe (`exists=True` já barra o
         # typo com exit 2), então "nenhum workflow aqui" é um fato legítimo — um subprojeto de
