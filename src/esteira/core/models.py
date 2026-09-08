@@ -83,6 +83,24 @@ class ScanResult:
     # `esteira scan /outro/repo` rodando de dentro deste repo carimbaria o commit errado —
     # o pior tipo de metadado, o que parece certo.
     root: str | None = None
+    # Cobertura da varredura. O MESMO `--only/--skip` que filtra os achados também reduz o
+    # conjunto de checagens que de fato rodou: sem declarar isso, `--only <uma-checagem>` sem
+    # achados certificava o repositório inteiro como limpo — a nota cega à cobertura. O
+    # catálogo é o denominador honesto; `checagens_omitidas` é o que o operador deixou de
+    # fora. Uma varredura parcial não certifica ausência de problema (ver `cobertura_parcial`).
+    checagens_omitidas: tuple[str, ...] = ()
+    checagens_total: int = 0
+
+    @property
+    def cobertura_parcial(self) -> bool:
+        """Alguma checagem do catálogo ficou de fora (--only/--skip): o resultado fala só do
+        que rodou, não do alvo inteiro. É o que impede a varredura recortada de passar verde."""
+        return bool(self.checagens_omitidas)
+
+    @property
+    def checagens_executadas(self) -> int:
+        """Quantas checagens do catálogo de fato rodaram — o numerador do laudo de cobertura."""
+        return self.checagens_total - len(self.checagens_omitidas)
 
     def max_severity(self) -> Severity | None:
         if not self.findings:

@@ -66,6 +66,23 @@ esta tabela divergir do catálogo, inclusive na severidade).
 > Chain Failures* em 2025 e era *Injection* em 2021. Quem consome o relatório por máquina lê o campo
 > `owasp_edition` do JSON/SARIF em vez de interpretar a string.
 
+### Precisão da injeção — o que dispara e o que não
+
+`script-injection` decide pelo **contexto de onde o dado vem**, não pela mera presença de `${{ }}`. Além de `github.event.*` e `head_ref`, trata como **não-confiável**:
+
+- o **`client_payload` de `repository_dispatch`** — JSON 100% controlado por quem envia o dispatch: qualquer subcaminho (`github.event.client_payload.slash_command.args.named.*`, `.args.unnamed`, …) é entrada do atacante;
+- os **campos de evento de texto livre** — `release.body`/`.name`, `label.name`/`.description`, `milestone.title`/`.description` —, cujo conteúdo aceita Unicode, aspas e `$( )`.
+
+A severidade é calibrada pelo **privilégio do gatilho**: texto livre de fork anônimo (issue / PR / comentário) permanece **Crítica**; de um ator com escrita/triagem (release, label, milestone, dispatch) é **Alta** — escalação de insider, não atacante externo anônimo.
+
+E a ferramenta **não grita** onde não há charset de shell a injetar, evitando o falso-positivo que faria o time desligar a checagem:
+
+- um `input` resolvido como **`type: number` ou `boolean`** em todos os blocos `on.workflow_call`/`on.workflow_dispatch` que o declaram — o GitHub coage o valor antes de ele existir (um `input` `string`/`choice`/sem `type:` continua disparando);
+- `owner.login` e afins, de charset restrito `[A-Za-z0-9-]`;
+- uma expressão que **inteira** avalia para booleano: os operadores `&&`/`||` do GitHub são de curto-circuito e **retornam o operando**, então `github.event.issue.title == 'x' && github.event.issue.body || 'y'` devolve o corpo da issue e **é** marcado, enquanto `contains(github.event.issue.body, 'x')` (só `true`/`false` sai) não.
+
+Na mesma auditoria, `unpinned-container-image` passou a ancorar o achado na **chave estrutural** de onde a imagem foi lida (`container.image` / `services.<nome>.image`), nunca na primeira ocorrência textual da expressão — o que também faz o `# zizmor: ignore` / `# esteira: ignore` da linha da imagem voltar a suprimir corretamente.
+
 ---
 
 ## 🔬 O que foi medido
@@ -164,8 +181,8 @@ esteira rules
 | `-f, --format` | `console` | `json` para consumir por máquina; `sarif` para a aba Security do GitHub |
 | `-o, --output` | *(stdout)* | grava o relatório num arquivo (obrigatório com nada em `console`; passar `-o` com `--format console` é erro de uso → exit 2) |
 | `--fail-on` | `high` | `critical` afrouxa o portão; `low`/`medium` aperta. `none` nunca falha (só relata) |
-| `--only` | *(todas)* | foca uma triagem numa ou mais checagens (id da coluna `esteira rules`); id desconhecido → exit 2 |
-| `--skip` | *(nenhuma)* | silencia uma checagem ruidosa no seu contexto sem desligar o resto |
+| `--only` | *(todas)* | foca uma triagem numa ou mais checagens (id da coluna `esteira rules`); id desconhecido → exit 2. Torna a varredura **parcial** — ver *Cobertura* |
+| `--skip` | *(nenhuma)* | silencia uma checagem ruidosa no seu contexto sem desligar o resto. Também torna a varredura **parcial** |
 
 ### Supressão inline (por linha)
 
@@ -194,8 +211,8 @@ Uma marca `# zizmor: ignore` de outro auditor também é respeitada como "linha 
 
 | Saída | Significado |
 | --- | --- |
-| `0` | Nenhum achado no nível de `--fail-on` ou acima (inclui "caminho existe, mas não tem workflow" — o aviso vai para o stderr) |
-| `1` | Achado com severidade `>= --fail-on` |
+| `0` | Nenhum achado no nível de `--fail-on` ou acima **e a varredura foi completa** (inclui "caminho existe, mas não tem workflow" — o aviso vai para o stderr) |
+| `1` | Achado com severidade `>= --fail-on` — **ou** a varredura foi parcial (`--only`/`--skip`) e não pode certificar ausência (ver *Cobertura*) |
 | `2` | Erro de uso: caminho inexistente, ID desconhecido em `--only`/`--skip`, `--output` com `--format console` |
 
 `--fail-on` aceita `none · info · low · medium · high · critical`. O **default do Esteira é `high`**.
@@ -209,6 +226,14 @@ cabeçalho ausente — um scanner de segredo deve ter o gatilho mais sensível.
 | Chaveiro | `high` |
 | Sentinela | `alta` (vocabulário PT) |
 | Guardião | `medium` |
+
+### Cobertura — uma varredura parcial não certifica limpo
+
+`--only`/`--skip` reduzem o conjunto de checagens que de fato rodou. Uma varredura recortada e **sem achados** certifica só o que foi executado, não o repositório inteiro — tratá-la como aprovação seria verde falso eterno no CI de quem roda uma checagem isolada. Por isso a cobertura é **declarada**, nas três frentes:
+
+- **Console:** o veredito limpo é qualificado — `✓ Nenhum problema nas checagens executadas`, seguido de `Cobertura parcial (N de M checagens) … Não avaliado: <ids>`. A mesma linha sai também quando há achados (ter encontrado algo não prova que o resto do catálogo estava limpo).
+- **JSON:** um bloco `coverage` com `partial` (a bandeira que o dashboard lê), `ran`, `base_total` e `omitted_by_operator` (as checagens que ficaram de fora).
+- **Portão do CI:** uma varredura parcial **não passa verde** — sai com código `1` mesmo sem achados. Para rodar uma checagem isolada de propósito sem reprovar o build, use `--fail-on none` (a saída explícita, que desliga o portão inteiro).
 
 ---
 
@@ -282,7 +307,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 - **Separação de responsabilidades:** `core/` (modelos + loader YAML) × `checks/` (catálogo, detectores, motor) × `report/` (console, json, sarif) × `cli.py`.
 - **Fonte única de verdade:** severidade + rótulo OWASP/CWE + recomendação vivem só em `checks/catalog.py` (um `CheckMeta` por checagem); os três renderizadores leem dele, sem duplicar rótulo.
-- **Contrato de saída versionado:** JSON com `schema: suite-appsec/1` e SARIF **2.1.0** (`$schema` do schemastore, catálogo completo como `rules`) para a aba Security.
+- **Contrato de saída versionado:** JSON com `schema: suite-appsec/1` e SARIF **2.1.0** (`$schema` do schemastore, catálogo completo como `rules`) para a aba Security. O JSON carrega ainda um bloco `coverage` (`partial`/`ran`/`base_total`/`omitted_by_operator`) para o consumidor de máquina distinguir "limpo" de "não olhado" quando `--only`/`--skip` recortam a varredura.
 - **Relatório vinculável a um código:** o envelope do JSON — e o `runs[0].properties` do SARIF — carregam `commit` (o commit do repositório **auditado**: `ESTEIRA_COMMIT` → `git rev-parse HEAD` → `null` fora de repo git), `ruleset_hash` (SHA-256 do catálogo de 17 checagens) e `artifact_sha256` (auto-hash do relatório). Sem os três, um achado que desaparece na entrega seguinte é indistinguível de uma regra que foi afrouxada. **Para conferir o `artifact_sha256`:** ponha `null` no campo, serialize com `json.dumps(doc, sort_keys=True, ensure_ascii=False, separators=(",", ":"))` e tire o SHA-256 do UTF-8.
 - **Redação de credencial na evidência:** o `evidence` copia trecho da linha do workflow — e a regra `secret-in-run` existe justamente para achar linha com segredo. Toda credencial de **formato conhecido** (AWS, GitHub PAT, Stripe, Slack, Google, npm, PyPI, GitLab, SendGrid, JWT, bloco PEM) sai mascarada nas pontas, no console, no JSON e no `snippet` do SARIF. A redação vem **antes** do truncamento em 120 caracteres, senão um segredo que começa no caractere 110 sairia com 10 caracteres crus. Não há regra de entropia genérica de propósito: ela mastigaria o SHA de 40 hex do pin de action, que é a evidência principal de `unpinned-action-*`. **Limite assumido:** credencial de formato desconhecido (senha solta, token interno) não é redigida.
 - **Tipos estritos e imutabilidade:** `mypy --strict`, `from __future__ import annotations` em todo módulo, e os modelos de domínio (`Finding`, `CheckMeta`) são `@dataclass(frozen=True)`.

@@ -43,10 +43,19 @@ def txt(value: object) -> Text:
 def render(result: ScanResult, console: Console | None = None) -> None:
     console = console or Console()
     if not result.findings:
-        console.print(
-            f"[bold green]✓ Nenhum problema encontrado[/] "
-            f"[dim]({result.files_scanned} workflow(s)).[/]"
-        )
+        if result.cobertura_parcial:
+            # Varredura recortada e limpa NÃO é "nenhum problema": é "nenhum problema NAS
+            # CHECAGENS EXECUTADAS". Sem qualificar, o verde afirmaria cobertura que não teve.
+            console.print(
+                f"[bold yellow]✓ Nenhum problema nas checagens executadas[/] "
+                f"[dim]({result.files_scanned} workflow(s)).[/]"
+            )
+            console.print(_linha_cobertura(result))
+        else:
+            console.print(
+                f"[bold green]✓ Nenhum problema encontrado[/] "
+                f"[dim]({result.files_scanned} workflow(s)).[/]"
+            )
         return
 
     findings = result.sorted()
@@ -70,6 +79,24 @@ def render(result: ScanResult, console: Console | None = None) -> None:
     console.print(
         f"\n[bold]{len(result.findings)} achado(s)[/] em {result.files_scanned} workflow(s) — "
         + "  ".join(parts)
+    )
+    # A cobertura também é impressa COM achados: ter encontrado algo não prova que o resto do
+    # catálogo (o que ficou de fora) estava limpo — a lista de achados continua parcial.
+    if result.cobertura_parcial:
+        console.print(_linha_cobertura(result))
+
+
+def _linha_cobertura(result: ScanResult) -> str:
+    """Uma linha nomeando a cobertura efetiva e o que ficou de fora.
+
+    Os IDs vêm do catálogo (nossas próprias strings, nunca do alvo), então é seguro
+    interpolá-los na marcação do `rich` sem passar por :func:`txt`.
+    """
+    return (
+        f"[yellow]Cobertura parcial[/] "
+        f"({result.checagens_executadas} de {result.checagens_total} checagens) — "
+        f"uma varredura parcial não certifica ausência de problema. "
+        f"Não avaliado: [dim]{', '.join(result.checagens_omitidas)}[/]."
     )
 
 

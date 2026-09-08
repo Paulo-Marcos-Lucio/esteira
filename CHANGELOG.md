@@ -3,6 +3,42 @@
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Cobertura declarada (a nota deixa de ser cega ao recorte).** `--only`/`--skip` reduzem o
+  conjunto de checagens que roda; uma varredura recortada e sem achados certificava o repositório
+  inteiro como limpo. Agora `ScanResult` carrega `checagens_omitidas`/`checagens_total`,
+  `engine.scan()` os computa a partir do catálogo, o console qualifica o veredito
+  (`✓ Nenhum problema nas checagens executadas` + linha `Cobertura parcial (N de M)… Não avaliado:`),
+  o JSON ganha um bloco `coverage` (`partial`/`ran`/`base_total`/`omitted_by_operator`) e o portão
+  do CI **não passa verde** numa varredura parcial (exit `1` mesmo sem achados; `--fail-on none`
+  é a saída explícita para uma checagem isolada de propósito). Espelha o `_maybe_fail` do Sentinela.
+  Invariante *property-based*: para qualquer subconjunto executado, `checagens_omitidas` é
+  exatamente `catálogo − ativo` e `partial` sse e só se algo ficou de fora.
+
+### Corrigido
+
+- **Injeção via `client_payload` de `repository_dispatch` deixava de ser marcada** (FN). Qualquer
+  subcaminho de `github.event.client_payload.*` (JSON 100% controlado por quem envia o dispatch)
+  passa a contar como entrada não-confiável, via regex de prefixo do subtree inteiro.
+- **Campos de evento de texto livre não eram tratados como não-confiáveis** (FN):
+  `release.body`/`.name`, `label.name`/`.description`, `milestone.title`/`.description` aceitam
+  Unicode/aspas/`$( )` e agora geram `script-injection`, com severidade **Alta** calibrada pelo
+  privilégio do gatilho (escalação de insider, não fork anônimo). `owner.login` (charset restrito)
+  segue de fora, de propósito.
+- **`input` de `type: number`/`boolean` gerava falso-positivo** (FP): o tipo é resolvido a partir
+  dos blocos `on.workflow_call`/`on.workflow_dispatch` que declaram o input — se todos derem
+  `number`/`boolean`, a interpolação de `${{ inputs.x }}` num `run:` não dispara (o GitHub coage o
+  valor antes de ele existir). `string`/`choice`/sem `type:` continuam disparando.
+- **Ternário booleano super-suprimia a injeção** (FN): os operadores `&&`/`||` do GitHub são de
+  curto-circuito e **retornam o operando**; só se suprime quando a expressão **inteira** avalia
+  para booleano, não quando existe um `==` em algum ponto da string.
+- **Âncora de achado de imagem caía na 1ª ocorrência textual da expressão** (FP): passa a apontar a
+  **chave estrutural** de onde a imagem foi lida (`container.image`/`services.<nome>.image`), o que
+  também reabilita a supressão `# zizmor: ignore` / `# esteira: ignore` na linha correta.
+
 ## [0.5.0] — 2026-08-05
 
 ### Adicionado

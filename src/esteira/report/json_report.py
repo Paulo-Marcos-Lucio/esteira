@@ -52,6 +52,10 @@ def to_document(result: ScanResult) -> dict[str, Any]:
         "commit": provenance.commit(result.root),
         "ruleset_hash": provenance.ruleset_hash(),
         "artifact_sha256": None,
+        # Cobertura: o consumidor de máquina (dashboard/CI) precisa distinguir "limpo" de
+        # "não olhado". `partial=true` significa que o resultado fala só do que rodou —
+        # `--only/--skip` reduziram o conjunto e nenhum achado NÃO é prova de ausência.
+        "coverage": _coverage_dict(result),
         "summary": {
             "total": len(findings),
             "by_severity": counts,
@@ -63,6 +67,18 @@ def to_document(result: ScanResult) -> dict[str, Any]:
     # proveniência acima. Trocar o commit depois da entrega invalida o hash.
     document["artifact_sha256"] = provenance.artifact_sha256(document)
     return document
+
+
+def _coverage_dict(result: ScanResult) -> dict[str, Any]:
+    """Bloco de cobertura da suíte: quantas checagens rodaram, o total do catálogo, e as que
+    o operador deixou de fora. `partial` é a bandeira que o CI lê para não tratar uma
+    varredura recortada e sem achados como aprovação."""
+    return {
+        "partial": result.cobertura_parcial,
+        "ran": result.checagens_executadas,
+        "base_total": result.checagens_total,
+        "omitted_by_operator": list(result.checagens_omitidas),
+    }
 
 
 def to_json(result: ScanResult) -> str:

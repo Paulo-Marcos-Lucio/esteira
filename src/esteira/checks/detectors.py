@@ -13,8 +13,10 @@ import re
 from collections.abc import Iterator
 from typing import Any
 
+import yaml
+
 from esteira.checks.catalog import make_finding
-from esteira.core.loader import trigger_names
+from esteira.core.loader import get_triggers, trigger_names
 from esteira.core.models import Finding, Severity, Workflow
 from esteira.core.redaction import evidence as evidencia
 
@@ -46,6 +48,17 @@ _UNTRUSTED = (
     "github.event.workflow_run.head_commit.author.email",
     "github.event.workflow_run.head_commit.author.name",
     "github.event.pages",
+    # Campos de EVENTO de texto livre com charset arbitrário (Unicode/aspas/$()), controlados por
+    # um ator PRIVILEGIADO (release=write, label/milestone=triage): não é o fork anônimo, mas o
+    # conteúdo cru quebra a string do shell igual. A severidade é rebaixada para HIGH em
+    # `_injection_severity` (escalação/insider, não externo). O critério é o CHARSET do campo —
+    # `owner.login` ([A-Za-z0-9-]) fica DE FORA de propósito (ver `f06`).
+    "github.event.release.body",
+    "github.event.release.name",
+    "github.event.label.name",
+    "github.event.label.description",
+    "github.event.milestone.title",
+    "github.event.milestone.description",
 )
 # Subcampos injetáveis de commits[] — só .message/.author/.committer (não .id, que é SHA) — e os
 # INPUTS do workflow. `inputs.*` (workflow_call/workflow_dispatch) e a grafia legada
@@ -54,6 +67,11 @@ _UNTRUSTED = (
 # outro contexto — `needs.x.outputs.inputs_json` e `myinputs.y` NÃO são inputs.
 _UNTRUSTED_RE = (
     re.compile(r"github\.event\.commits.*?\.(?:message|author|committer)"),
+    # repository_dispatch: `client_payload` é JSON 100% controlado por quem envia o dispatch, sem
+    # schema — QUALQUER subcampo (`.slash_command.args.named.*`, `.args.unnamed`, escalares
+    # "numéricos" inclusos) é não-confiável. Prefixo do subtree inteiro, não um campo isolado;
+    # vem ANTES de `inputs` para que um payload real vença uma correspondência de input.
+    re.compile(r"github\.event\.client_payload(?:\.[\w-]+|\[[0-9]+\])*"),
     re.compile(r"(?:github\.event\.inputs|(?<![\w.])inputs)\.[\w-]+"),
     # workflow_run carrega o PR associado; `pull_requests[i].head.ref`/`.head.label` é o nome da
     # branch do fork (texto livre do atacante), mesma classe de `github.head_ref`.
@@ -375,13 +393,94 @@ _BOOL_FUNCS = (
 _COMPARACAO = re.compile(r"==|!=|<=|>=|(?<![<>=!])[<>](?![=])")
 
 
-def _expr_resulta_booleano(inner: str) -> bool:
-    """O conteudo de um `${{ ... }}` avalia para um BOOLEANO (comparacao ou funcao booleana
-    envolvendo tudo)? Entao nao carrega o texto/segredo de entrada para a saida."""
-    s = inner.strip().lower()
-    if _COMPARACAO.search(s):
+def _mascara_aninhado(s: str) -> str:
+    """``s`` com todo caractere DENTRO de string literal ou de parênteses trocado por espaço,
+    preservando comprimento e os caracteres de NÍVEL SUPERIOR (fora de aspas/parênteses).
+
+    Deixa visíveis só os operadores de topo (`&&`, `||`, comparações) para que o split e a
+    detecção de comparação não sejam enganados por um operador que vive dentro de uma string
+    (`contains(x, '&&')`) ou dentro de uma sub-expressão entre parênteses (`(a || b) == c`)."""
+    out: list[str] = []
+    depth = 0
+    quote = ""
+    for ch in s:
+        if quote:
+            quote = "" if ch == quote else quote
+            out.append(" ")
+        elif ch in ("'", '"'):
+            quote = ch
+            out.append(" ")
+        elif ch == "(":
+            depth += 1
+            out.append(" ")
+        elif ch == ")":
+            depth = max(0, depth - 1)
+            out.append(" ")
+        else:
+            out.append(" " if depth > 0 else ch)
+    return "".join(out)
+
+
+def _split_top_level(s: str, op: str) -> list[str]:
+    """Fatia ``s`` nas ocorrências de ``op`` (2 chars, ex. ``&&``/``||``) que estão no NÍVEL
+    SUPERIOR (fora de aspas e parênteses). Uma só ocorrência ⇒ lista com o próprio ``s``."""
+    mask = _mascara_aninhado(s)
+    parts: list[str] = []
+    inicio = 0
+    i = 0
+    while i <= len(mask) - len(op):
+        if mask[i : i + len(op)] == op:
+            parts.append(s[inicio:i])
+            inicio = i + len(op)
+            i += len(op)
+        else:
+            i += 1
+    parts.append(s[inicio:])
+    return parts
+
+
+def _e_expressao_booleana(s: str) -> bool:
+    """A expressão INTEIRA ``s`` avalia, com garantia, para um booleano (true/false)?
+
+    Causa-raiz da super-supressão: ``&&`` e ``||`` do GitHub são curto-circuito e RETORNAM o
+    operando (não coagem para bool). Em ``T <cmp> U && A || B`` o resultado é ``A`` ou ``B`` —
+    se ``A``/``B`` for contexto não-confiável, ele FLUI para o shell. A mera presença de um
+    ``==`` em algum ponto da string não torna a expressão inteira booleana. Só há garantia de
+    bool quando: (a) todo operando de um ``||``/``&&`` de topo é, recursivamente, booleano;
+    (b) o primário é uma comparação de topo, uma negação ``!``, uma função booleana envolvendo
+    tudo, ou o literal true/false. Caso contrário — referência crua, string, função de texto —
+    o valor pode fluir e NÃO se pode suprimir."""
+    s = s.strip()
+    if not s:
+        return False
+    # Descasca um par de parênteses que envolve a expressão INTEIRA: `(expr)` ≡ `expr`. A máscara
+    # de `(a == b)` é toda espaços (tudo nível ≥1); a de `(a) && (b)` deixa o `&&` de topo visível,
+    # então este só descasca quando não há operador de topo fora dos parênteses.
+    while s.startswith("(") and s.endswith(")") and _mascara_aninhado(s).strip() == "":
+        s = s[1:-1].strip()
+        if not s:
+            return False
+    # `||` tem a menor precedência, depois `&&`: um operando não-booleano na posição de retorno
+    # de qualquer um dos dois já derruba a garantia (é o texto do atacante que sai).
+    for op in ("||", "&&"):
+        partes = _split_top_level(s, op)
+        if len(partes) > 1:
+            return all(_e_expressao_booleana(p) for p in partes)
+    low = s.lower()
+    if low in ("true", "false"):
         return True
-    return s.endswith(")") and any(s.startswith(fn) for fn in _BOOL_FUNCS)
+    if s.startswith("!"):  # negação sempre produz bool
+        return True
+    if _COMPARACAO.search(_mascara_aninhado(s)):  # comparação de topo produz bool
+        return True
+    return low.endswith(")") and any(low.startswith(fn) for fn in _BOOL_FUNCS)
+
+
+def _expr_resulta_booleano(inner: str) -> bool:
+    """O conteudo de um `${{ ... }}` avalia para um BOOLEANO? Entao nao carrega o texto/segredo
+    de entrada para a saida. Delega a `_e_expressao_booleana`, que respeita o curto-circuito de
+    `&&`/`||` (retornam o operando) em vez de só procurar um operador de comparacao na string."""
+    return _e_expressao_booleana(inner)
 
 
 def _untrusted_hit(text: str) -> str | None:
@@ -531,20 +630,75 @@ def _is_inputs_context(hit: str) -> bool:
     return "inputs" in hit
 
 
+# `type:` de input que NÃO carrega texto arbitrário: o GitHub coage o valor a um numeral/booleano
+# antes de ele existir, então não há charset de shell a injetar. `string`/`choice` (e a AUSÊNCIA
+# de `type`, que assume string) continuam injetáveis.
+_TIPOS_INPUT_NAO_INJETAVEIS = frozenset({"number", "boolean"})
+# Nome do input dentro de um hit (`inputs.pr` / `github.event.inputs.pr` → `pr`).
+_INPUT_NAME_RE = re.compile(r"inputs\.([\w-]+)")
+
+
+def _input_e_injetavel(wf: Workflow, hit: str) -> bool:
+    """O input alcançado por ``hit`` pode carregar texto injetável?
+
+    Resolve o `type:` declarado nos blocos ``on.workflow_call.inputs`` / ``on.workflow_dispatch.
+    inputs`` do PRÓPRIO workflow. Só deixa de ser injetável quando TODO bloco de gatilho que
+    declara o input dá ``number``/``boolean`` — se algum bloco o declara sem `type:` (=string),
+    com `string`/`choice`, ou se o input não aparece em nenhum bloco (tipo desconhecido), mantém
+    o veredito injetável (preserva o TP de `type: string`)."""
+    m = _INPUT_NAME_RE.search(hit)
+    if m is None:
+        return True
+    name = m.group(1).lower()
+    triggers = get_triggers(wf.data or {})
+    if not isinstance(triggers, dict):
+        return True
+    declarados: list[str | None] = []
+    for bloco in ("workflow_call", "workflow_dispatch"):
+        cfg = triggers.get(bloco)
+        inputs = cfg.get("inputs") if isinstance(cfg, dict) else None
+        if not isinstance(inputs, dict):
+            continue
+        for chave, spec in inputs.items():
+            if str(chave).lower() != name:
+                continue
+            tipo = spec.get("type") if isinstance(spec, dict) else None
+            declarados.append(tipo.lower() if isinstance(tipo, str) else None)
+    if not declarados:
+        return True
+    return not all(t in _TIPOS_INPUT_NAO_INJETAVEIS for t in declarados)
+
+
+# Prefixos de contexto de texto livre controlado por um ATOR PRIVILEGIADO (write/triage), não por
+# um anônimo externo: exigem token/permissão para EXISTIR (enviar um repository_dispatch, publicar
+# um release, criar/aplicar um label ou milestone). É escalação/insider — sério, mas não o CRITICAL
+# do texto de fork anônimo (issue/PR/comentário). Casam por prefixo o hit já normalizado.
+_CONTEXTO_ATOR_PRIVILEGIADO = (
+    "github.event.client_payload",
+    "github.event.release.",
+    "github.event.label.",
+    "github.event.milestone.",
+)
+
+
 def _injection_severity(wf: Workflow, hit: str) -> Severity | None:
     """Severidade calibrada por gatilho (``None`` ⇒ padrão CRITICAL do catálogo).
 
     Sinal SUAVE, não filtro: nunca suprime o achado — só ajusta o quão alto ele grita, porque a
     MESMA expressão vale coisas diferentes conforme QUEM alimenta o input.
 
-    - Evento de texto livre (issue/PR/comentário/commit): permanece CRITICAL — controlado por
-      qualquer um que abra um PR/issue (retorna ``None`` p/ herdar o catálogo).
+    - Evento de texto livre de fork ANÔNIMO (issue/PR/comentário/commit): permanece CRITICAL —
+      controlado por qualquer um que abra um PR/issue (retorna ``None`` p/ herdar o catálogo).
+    - Texto livre de ator PRIVILEGIADO (client_payload/release/label/milestone): HIGH — quem
+      dispara já tem token/permissão de escrita ou triagem; é escalação/insider, não externo.
     - Input com gatilho alcançável por atacante (workflow_call e cia.): HIGH.
     - Input só sob workflow_dispatch: LOW — disparar já exige acesso de escrita ao repo, então é
       higiene, não porta de entrada externa (mas NÃO é zero: o próprio operador pode se enganar,
       e o hábito de interpolar input cru no shell é o que queremos corrigir).
     - Gatilho indeterminado: MEDIUM — sinaliza sem cravar CRITICAL.
     """
+    if hit.startswith(_CONTEXTO_ATOR_PRIVILEGIADO):
+        return Severity.HIGH
     if not _is_inputs_context(hit):
         return None
     names = trigger_names(wf.data or {})
@@ -765,6 +919,8 @@ def _scan_step_injection(
             hit = _untrusted_hit(resolved) or _taint_hit(match.group(1), taint_ctx, env_map)
             if hit is None:
                 continue
+            if _is_inputs_context(hit) and not _input_e_injetavel(wf, hit):
+                continue  # input com type: number/boolean — o valor nao carrega charset de shell
             if _expr_resulta_booleano(match.group(1)):
                 continue  # ${{ contains(...) }} / comparacao: resultado booleano, nao injetavel
             evidence = match.group(0).strip()
@@ -1413,12 +1569,80 @@ def _resolve_matrix_image(job: dict[str, Any], image: str) -> list[str] | None:
     return _matrix_values(job, m.group(1)) or None
 
 
+def _compose_root(text: str) -> yaml.MappingNode | None:
+    """Árvore de NÓS YAML (com `start_mark.line`) do documento — para ancorar um achado na
+    CHAVE ESTRUTURAL, não na 1ª ocorrência lexical do valor. ``None`` se não compõe num mapa."""
+    try:
+        node = yaml.compose(text)
+    except (yaml.YAMLError, RecursionError, ValueError):
+        return None
+    return node if isinstance(node, yaml.MappingNode) else None
+
+
+def _map_value_node(node: Any, key: str) -> Any:
+    """Nó-valor de ``key`` num MappingNode (ou None)."""
+    if not isinstance(node, yaml.MappingNode):
+        return None
+    for k, v in node.value:
+        if isinstance(k, yaml.ScalarNode) and k.value == key:
+            return v
+    return None
+
+
+def _key_line(node: Any, key: str) -> int:
+    """Linha (1-based) da CHAVE ``key`` num MappingNode (0 se ausente)."""
+    if isinstance(node, yaml.MappingNode):
+        for k, _v in node.value:
+            if isinstance(k, yaml.ScalarNode) and k.value == key:
+                return int(k.start_mark.line) + 1
+    return 0
+
+
+def _job_nodes(root: yaml.MappingNode | None) -> list[yaml.MappingNode]:
+    """Nós de job (só mapas), na ordem do documento — alinha 1-a-1 com ``_jobs(wf.data)``."""
+    jobs = _map_value_node(root, "jobs")
+    if not isinstance(jobs, yaml.MappingNode):
+        return []
+    return [v for _k, v in jobs.value if isinstance(v, yaml.MappingNode)]
+
+
+def _container_image_lines(job_node: yaml.MappingNode) -> list[int]:
+    """Linha da CHAVE de imagem para cada imagem do job, na MESMA ordem que ``_job_images``
+    (container, depois services em ordem). É a chave estrutural (`image:`/`container:`/nome do
+    service), nunca a 1ª ocorrência textual do valor — assim o achado nunca pousa numa linha
+    `name:` e o `# zizmor/esteira: ignore` da linha certa volta a suprimir."""
+    lines: list[int] = []
+    container = _map_value_node(job_node, "container")
+    if isinstance(container, yaml.ScalarNode):  # `container: node:16`
+        lines.append(_key_line(job_node, "container"))
+    elif isinstance(_map_value_node(container, "image"), yaml.ScalarNode):
+        lines.append(_key_line(container, "image"))
+    services = _map_value_node(job_node, "services")
+    if isinstance(services, yaml.MappingNode):
+        for svc_key, svc in services.value:
+            if isinstance(svc, yaml.ScalarNode):  # `redis: redis:6`
+                lines.append(int(svc_key.start_mark.line) + 1)
+            elif isinstance(_map_value_node(svc, "image"), yaml.ScalarNode):
+                lines.append(_key_line(svc, "image"))
+    return lines
+
+
 def check_unpinned_images(wf: Workflow) -> list[Finding]:
     """Imagens de contêiner (container:/services:/docker://) fixadas por tag, não por digest."""
     out: list[Finding] = []
     cursor = 1
-    for job in _jobs(wf.data):
-        for image in _job_images(job):
+    jobs = _jobs(wf.data)
+    # A árvore de nós (com marcas de linha) só é composta quando há DE FATO alguma imagem a
+    # ancorar: recompor o texto inteiro em todo workflow — inclusive os milhares de jobs sem
+    # container/services — reintroduziria o custo que o cursor linear eliminou.
+    job_nodes = _job_nodes(_compose_root(wf.text)) if any(_job_images(j) for j in jobs) else []
+    for idx, job in enumerate(jobs):
+        images = _job_images(job)
+        # Linhas estruturais só quando alinham 1-a-1 com os valores (mesma contagem/ordem);
+        # qualquer divergência (alias YAML, escalar não-string) cai no localizador lexical.
+        node_lines = _container_image_lines(job_nodes[idx]) if idx < len(job_nodes) else []
+        structural = node_lines if len(node_lines) == len(images) else []
+        for k, image in enumerate(images):
             if "@sha256:" in image:
                 continue
             resolved = _resolve_matrix_image(job, image)
@@ -1427,8 +1651,10 @@ def check_unpinned_images(wf: Workflow) -> list[Finding]:
             # evita acusar a expressão como se fosse uma tag móvel (classe FP 35).
             if resolved is not None and all("@sha256:" in v for v in resolved):
                 continue
-            line = wf.find_line(image, start=cursor)
-            cursor = line + 1
+            line = structural[k] if k < len(structural) and structural[k] > 0 else 0
+            if line == 0:
+                line = wf.find_line(image, start=cursor)
+            cursor = max(cursor, line + 1)
             out.append(
                 make_finding(
                     "unpinned-container-image",

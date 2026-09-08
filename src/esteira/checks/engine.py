@@ -6,7 +6,7 @@ import os
 from collections.abc import Iterable
 from pathlib import Path
 
-from esteira.checks.catalog import make_finding
+from esteira.checks.catalog import CATALOG, make_finding
 from esteira.checks.detectors import run_all
 from esteira.core.loader import iter_workflow_files, load
 from esteira.core.models import Finding, ScanResult
@@ -68,4 +68,19 @@ def scan(
             if finding.check_id in skip_set:
                 continue
             findings.append(finding)
-    return ScanResult(findings=findings, files_scanned=len(files), root=str(base))
+
+    # Cobertura: o conjunto ATIVO de checagens é o catálogo depois de aplicar --only/--skip
+    # (o mesmo recorte que filtrou os achados acima). O que ficou de fora é omissão do
+    # operador — declarada aqui para que o console, o JSON e o portão do CI possam dizer que
+    # um resultado sem achados fala só do que rodou. IDs em --only fora do catálogo não
+    # entram no conjunto ativo (a CLI já os rejeita com exit 2; aqui a redução é honesta).
+    catalogo = set(CATALOG)
+    ativo = (only_set & catalogo if only_set is not None else catalogo) - skip_set
+    omitidas = tuple(sorted(catalogo - ativo))
+    return ScanResult(
+        findings=findings,
+        files_scanned=len(files),
+        root=str(base),
+        checagens_omitidas=omitidas,
+        checagens_total=len(catalogo),
+    )
