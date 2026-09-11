@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 199 32" width="199" height="32" role="img" aria-label="249 TESTS PASSING">
-  <title>249 TESTS PASSING</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 199 32" width="199" height="32" role="img" aria-label="418 TESTS PASSING">
+  <title>418 TESTS PASSING</title>
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#ffffff" stop-opacity="0.07"/>
@@ -19,5 +19,5 @@
   </g>
   <rect x="0" y="0" width="3" height="32" fill="#4ade80" clip-path="url(#c)"/>
   <text x="15" y="21" text-anchor="middle" font-size="14">✅</text>
-  <text x="36" y="20.5" font-family="'JetBrains Mono','Cascadia Code',ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="12.5" font-weight="700" letter-spacing="0.2" fill="#f4f4f4">249 TESTS PASSING</text>
+  <text x="36" y="20.5" font-family="'JetBrains Mono','Cascadia Code',ui-monospace,'SF Mono',Menlo,Consolas,monospace" font-size="12.5" font-weight="700" letter-spacing="0.2" fill="#f4f4f4">418 TESTS PASSING</text>
 </svg>

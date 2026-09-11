@@ -239,6 +239,16 @@ def run_all(wf: Workflow) -> list[Finding]:
     out += check_secrets_inherit(wf)
     out += check_unpinned_images(wf)
     out += check_checkout_credentials(wf)
+    # Caps Pro (import LOCAL: estes módulos importam helpers deste arquivo; import no topo
+    # criaria ciclo — resolvido na hora da chamada, com detectors já inicializado).
+    from esteira.checks.ai_workflow import check_ai_rule_of_two
+    from esteira.checks.compromised_actions import check_compromised_actions
+    from esteira.checks.hardening_extra import check_cache_poisoning, check_falsifiable_actor
+
+    out += check_compromised_actions(wf)
+    out += check_ai_rule_of_two(wf)
+    out += check_cache_poisoning(wf)
+    out += check_falsifiable_actor(wf)
     return [f for f in out if not _is_suppressed(wf, f)]
 
 

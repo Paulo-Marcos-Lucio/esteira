@@ -7,6 +7,32 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
+  2025-2026 sem tocar a infra do cliente:
+  - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de
+    incidentes de supply-chain reais (tj-actions/changed-files `CVE-2025-30066` pelo SHA malicioso;
+    reviewdog/action-setup `CVE-2025-30154` pelo **commit definitivo** `f0d342d…`, não pela tag v1
+    já remediada). Normaliza subpath (`owner/action/dir@ref`). Seam `--online` (OSV/GHSA) injetável,
+    **default offline** — a detecção funciona sem rede.
+  - `ai-agent-rule-of-two` (🟠 Alta, A05:2025/CWE-1427) e `ai-agent-untrusted-input` (🟡 Média) — a
+    **Regra de Dois** de agentes de IA em CI: entrada não-confiável + agente com ferramentas +
+    canal de escrita/exfil no mesmo job. Reconhece `uses:` de agente, CLIs (`claude`/`codex`/…) e
+    pacotes (`npx @anthropic-ai/claude-code`); trata `author_association` OWNER/MEMBER como guarda
+    de confiança; rebaixa `pull_request` de fork (token/segredos retidos) a Média; vê exfil por
+    `upload-artifact` e reusable workflow de agente no nível do job.
+  - `cache-poisoning` (🟠 Alta, A03:2025/CWE-349) — mesma chave de cache escrita em contexto
+    não-confiável e restaurada em confiável; ignora chave por-run/por-contexto (`github.ref`,
+    `github.ref_name`, `github.sha`…) e reconhece drop-ins (`buildjet/cache`).
+  - `falsifiable-actor-condition` (🟡 Média, A01:2025/CWE-807) — `if:` que decide privilégio por
+    identidade de ator falsificável; cobre `==`, `contains/startsWith/endsWith`, allowlist por
+    `fromJSON`, `github.event.sender.login`, e ignora negação `!(...)` e `!=` (direção segura).
+- **Corpus adversarial versionado** (`tests/fixtures/cetico_ci_2026_09_11.json`): 26 contraexemplos
+  de uma caçada cética multiagente contra os quatro detectores acima, com veredito adjudicado pelo
+  scanner real; roda no `pytest` e trava a regressão de classe.
+- **Registro EAGER do catálogo** (`esteira/checks/__init__.py`): as checagens em módulos próprios se
+  auto-registram no import do pacote, não só na 1ª varredura — `set(CATALOG)` (validação de
+  `--only/--skip`, `--list`, `ruleset_hash`, laudo de cobertura) enxerga o ruleset COMPLETO e de
+  forma determinística.
 - **Cobertura declarada (a nota deixa de ser cega ao recorte).** `--only`/`--skip` reduzem o
   conjunto de checagens que roda; uma varredura recortada e sem achados certificava o repositório
   inteiro como limpo. Agora `ScanResult` carrega `checagens_omitidas`/`checagens_total`,

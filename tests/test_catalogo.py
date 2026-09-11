@@ -79,6 +79,11 @@ CASOS_POSITIVOS: dict[str, str] = {
         "        with:\n          name: build\n          path: .\n"
     ),
     "invalid-yaml": "on: push\njobs: [este flow nunca fecha\n",
+    "known-compromised-action": "on: push\npermissions: {}\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: tj-actions/changed-files@0e58ed8671d6b60d0890c21b07f8835ace038e67\n",
+    "ai-agent-rule-of-two": "on: issues\npermissions:\n  contents: write\njobs:\n  triage:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: anthropics/claude-code-action@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          prompt: Responda a issue\n",
+    "ai-agent-untrusted-input": "on: issues\npermissions:\n  contents: read\njobs:\n  summarize:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: anthropics/claude-code-action@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          prompt: Resuma a issue\n",
+    "cache-poisoning": "on: [pull_request, push]\njobs:\n  seed:\n    if: ${{ github.event_name == 'pull_request' }}\n    runs-on: ubuntu-latest\n    permissions: {}\n    steps:\n      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: build-artifacts-shared\n  release:\n    if: ${{ github.event_name == 'push' }}\n    runs-on: ubuntu-latest\n    permissions: {}\n    steps:\n      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: build-artifacts-shared\n      - run: ./deploy.sh\n",
+    "falsifiable-actor-condition": "on: push\npermissions: {}\njobs:\n  gate:\n    if: ${{ github.actor == 'dependabot[bot]' }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo oi\n",
 }
 
 
@@ -122,6 +127,11 @@ SEVERIDADES: dict[str, Severity] = {
     "unpinned-reusable-workflow": Severity.LOW,
     "unpinned-container-image": Severity.LOW,
     "missing-permissions": Severity.LOW,
+    "known-compromised-action": Severity.CRITICAL,
+    "ai-agent-rule-of-two": Severity.HIGH,
+    "ai-agent-untrusted-input": Severity.MEDIUM,
+    "cache-poisoning": Severity.HIGH,
+    "falsifiable-actor-condition": Severity.MEDIUM,
 }
 
 

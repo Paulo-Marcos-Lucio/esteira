@@ -1,0 +1,8 @@
+on: push
+permissions: {}
+jobs:
+  gate:
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo oi

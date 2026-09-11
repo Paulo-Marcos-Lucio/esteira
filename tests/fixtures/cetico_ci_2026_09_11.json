@@ -1,0 +1,317 @@
+{
+ "origem": "cacada adversarial multiagente 2026-09-11 (workflow ceticos-esteira-pro); vereditos adjudicados empiricamente pelo scanner real",
+ "total": 26,
+ "casos": [
+  {
+   "id": "cx00",
+   "tipo": "FP",
+   "escopo_ids": [
+    "ai-agent-rule-of-two",
+    "ai-agent-untrusted-input"
+   ],
+   "esperado": [],
+   "yaml": "on: issue_comment\npermissions:\n  contents: write\n  pull-requests: write\njobs:\n  claude:\n    if: >\n      github.event.comment.author_association == 'OWNER' ||\n      github.event.comment.author_association == 'MEMBER'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: anthropics/claude-code-action@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          prompt: ${{ github.event.comment.body }}\n",
+   "nota": "CLASSE: o detector NUNCA lê `if:` (nem de job nem de step). Este é o padrão RECOMENDADO oficialmente pelo próprio claude-code-action: só OWNER/MEMBER dispara, logo a entrada deixa de ser não-confiável (leg 1 cai) — a Regra de Dois está RESP"
+  },
+  {
+   "id": "cx01",
+   "tipo": "FP",
+   "escopo_ids": [
+    "ai-agent-rule-of-two",
+    "ai-agent-untrusted-input"
+   ],
+   "esperado": [
+    "ai-agent-untrusted-input"
+   ],
+   "yaml": "on: pull_request\npermissions:\n  contents: write\n  pull-requests: write\njobs:\n  review:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: anthropics/claude-code-action@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          prompt: Revise este PR\n",
+   "nota": "CLASSE: em `pull_request` (diferente de pull_request_target) o vetor não-confiável é o PR de FORK, e para fork PRs o GITHUB_TOKEN é FORÇADO a read-only pelo GitHub e os segredos NÃO são injetados — independentemente do `permissions: write` "
+  },
+  {
+   "id": "cx02",
+   "tipo": "FP",
+   "escopo_ids": [
+    "ai-agent-rule-of-two",
+    "ai-agent-untrusted-input"
+   ],
+   "esperado": [
+    "ai-agent-untrusted-input"
+   ],
+   "yaml": "on: issue_comment\njobs:\n  bot:\n    runs-on: ubuntu-latest\n    permissions: {}\n    steps:\n      - uses: anthropics/claude-code-action@b4ffde65f46336ab88eb53be808477a3936bae11\n      - run: gh pr comment 1 --body \"ok\"\n",
+   "nota": "CLASSE: `_job_pushes_or_comments` marca a leg 3 ao ver `gh pr comment`/`git push` num `run:`, mas NÃO cruza com as permissões efetivas do job. Aqui `permissions: {}` zera o GITHUB_TOKEN, então o `gh pr comment` FALHA por falta de escopo — o"
+  },
+  {
+   "id": "cx03",
+   "tipo": "FN",
+   "escopo_ids": [
+    "ai-agent-rule-of-two",
+    "ai-agent-untrusted-input"
+   ],
+   "esperado": [
+    "ai-agent-rule-of-two"
+   ],
+   "yaml": "on: issues\npermissions:\n  contents: write\njobs:\n  bot:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npx @anthropic-ai/claude-code -p \"resolva\" --dangerously-skip-permissions\n",
+   "nota": "CLASSE: `_AI_CLI` exige que 'claude' esteja em POSIÇÃO DE COMANDO — precedido por início/[\\s;&|`(]. Em `npx @anthropic-ai/claude-code` o 'claude' vem depois de '/', que NÃO está na classe de separadores, então não casa; a flag `--dangerousl"
+  },
+  {
+   "id": "cx04",
+   "tipo": "FN",
+   "escopo_ids": [
+    "ai-agent-rule-of-two",
+    "ai-agent-untrusted-input"
+   ],
+   "esperado": [
+    "ai-agent-rule-of-two"
+   ],
+   "yaml": "on: issues\npermissions:\n  contents: read\njobs:\n  bot:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: anthropics/claude-code-action@b4ffde65f46336ab88eb53be808477a3936bae11\n      - uses: actions/upload-artifact@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dump.txt\n",
+   "nota": "CLASSE: a leg 3 é definida no docstring como 'MUDAR estado ou VAZAR', mas `_job_pushes_or_comments`/`_WRITE_ACTION_RE` só cobrem push/comentário/PR/release — não cobrem upload-artifact, que é um canal de EXFIL clássico (o agente induzido es"
+  },
+  {
+   "id": "cx05",
+   "tipo": "FN",
+   "escopo_ids": [
+    "ai-agent-rule-of-two",
+    "ai-agent-untrusted-input"
+   ],
+   "esperado": [
+    "ai-agent-untrusted-input"
+   ],
+   "yaml": "on: pull_request_target\npermissions:\n  contents: write\njobs:\n  review:\n    uses: my-org/claude-review/.github/workflows/run.yml@b4ffde65f46336ab88eb53be808477a3936bae11\n    secrets: inherit\n",
+   "nota": "CLASSE: `_first_agent` só olha `_steps_of(job)`; um job que é uma CHAMADA de reusable workflow (`uses:` no nível do job, sem `steps:`) devolve zero steps e o agente some — mesmo com o nome do reusable gritando 'claude', `secrets: inherit` ("
+  },
+  {
+   "id": "cx06",
+   "tipo": "FN",
+   "escopo_ids": [
+    "known-compromised-action"
+   ],
+   "esperado": [
+    "known-compromised-action"
+   ],
+   "yaml": "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: tj-actions/changed-files/git-diff@0e58ed8671d6b60d0890c21b07f8835ace038e67\n",
+   "nota": "CLASSE, não exemplo. _action_ref faz rpartition('@') e devolve action='tj-actions/changed-files/git-diff'; o casamento é KNOWN_COMPROMISED.get(action.lower()), match EXATO da chave. Um 'uses: owner/repo/subdir@ref' busca o REPO INTEIRO no c"
+  },
+  {
+   "id": "cx07",
+   "tipo": "FN",
+   "escopo_ids": [
+    "known-compromised-action"
+   ],
+   "esperado": [
+    "known-compromised-action"
+   ],
+   "yaml": "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: reviewdog/action-setup@f0d342d24037bb11d26b9bd8496e0808ba32e9ec\n",
+   "nota": "reviewdog fixado pelo COMMIT malicioso definitivo (CVE-2025-30154) casa; a tag v1 (remediada) NAO casa."
+  },
+  {
+   "id": "cx08",
+   "tipo": "FP",
+   "escopo_ids": [
+    "known-compromised-action"
+   ],
+   "esperado": [],
+   "yaml": "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: reviewdog/action-setup@v1\n",
+   "nota": "Contradiz o eixo baixo-FP e é assimétrico com tj-actions. 'v1' é a tag MAJOR MÓVEL do reviewdog; após CVE-2025-30154 a tag foi remediada e hoje resolve para um commit LIMPO. Marcar 'uses: reviewdog/action-setup@v1' como known-compromised CR"
+  },
+  {
+   "id": "cx09",
+   "tipo": "robustez",
+   "escopo_ids": [
+    "known-compromised-action"
+   ],
+   "esperado": [
+    "known-compromised-action"
+   ],
+   "yaml": "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: TJ-Actions/Changed-Files@0E58ED8671D6B60D0890C21B07F8835ACE038E67\n",
+   "nota": "Confirma que a normalização por .lower() em action E ref fecha a evasão por caixa (owner/repo são case-insensitive no GitHub; SHA hex idem). Scanner confirmado: dispara. NÃO é bug — é o comportamento correto; incluído para provar que a clas"
+  },
+  {
+   "id": "cx10",
+   "tipo": "robustez",
+   "escopo_ids": [
+    "known-compromised-action"
+   ],
+   "esperado": [],
+   "yaml": "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: tj-actions/changed-files@v44.0.0\n",
+   "nota": "Confirma o diferencial baixo-FP: casar por SHA imutável (e não por 'todas as tags') evita queimar quem usa a tag limpa/re-pinada da MESMA action comprometida. Scanner confirmado: []. Comportamento correto — é o contraste que expõe a inconsi"
+  },
+  {
+   "id": "cx11",
+   "tipo": "red-line",
+   "escopo_ids": [
+    "known-compromised-action"
+   ],
+   "esperado": [],
+   "yaml": "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker://ghcr.io/tj-actions/changed-files@0e58ed8671d6b60d0890c21b07f8835ace038e67\n",
+   "nota": "Red-line VERDE, confirmado por análise estática + execução. (1) O módulo não importa socket/requests/urllib/http/ssl — só dataclass/Callable e helpers internos. (2) advisory_lookup é o ÚNICO ponto de rede, default None, e o runner (detector"
+  },
+  {
+   "id": "cx12",
+   "tipo": "FP",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [],
+   "yaml": "on: [pull_request, push]\njobs:\n  seed:\n    if: github.event_name == 'pull_request'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: build-${{ github.ref_name }}\n  release:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: build-${{ github.ref_name }}\n      - run: ./deploy.sh\n",
+   "nota": "BURACO DE CLASSE mais grave: _keys_match compara o TEMPLATE da chave como TEXTO (_norm_key só tira espaços), mas duas chaves textualmente iguais resolvem para caches DIFERENTES quando contêm uma expressão que varia por contexto. `github.ref"
+  },
+  {
+   "id": "cx13",
+   "tipo": "FP",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [],
+   "yaml": "on: [pull_request, push]\njobs:\n  seed:\n    if: github.event_name == 'pull_request'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: build-${{ github.ref }}\n  release:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: build-${{ github.ref }}\n      - run: ./deploy.sh\n",
+   "nota": "Irmão do achado anterior, confirma que é CLASSE e não um token esquecido isolado. `github.ref` no PR = 'refs/pull/N/merge' e no push = 'refs/heads/main' -> chaves reais disjuntas por contexto -> não há colisão para envenenar. Rodei: o scann"
+  },
+  {
+   "id": "cx14",
+   "tipo": "FN",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [],
+   "yaml": "on: [pull_request, push]\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: shared\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: shared\n      - run: ./deploy.sh\n",
+   "nota": "REJEITADO como bug: o GitHub ISOLA cache de PR de fork; split simetrico ungated e escolha deliberada de baixo-FP (ver test_cache_contextos_simetricos_nao_disparam)."
+  },
+  {
+   "id": "cx15",
+   "tipo": "FN",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [
+    "cache-poisoning"
+   ],
+   "yaml": "on: [pull_request, push]\njobs:\n  seed:\n    if: github.event_name == 'pull_request'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: buildjet/cache@v4\n        with:\n          path: dist\n          key: shared\n  release:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: buildjet/cache@v4\n        with:\n          path: dist\n          key: shared\n      - run: ./deploy.sh\n",
+   "nota": "_CACHE_REFS só reconhece actions/cache, actions/cache/save e actions/cache/restore. buildjet/cache é um drop-in idêntico (mesmo with.key/restore-keys, papel 'both') muito usado, e Swatinem/rust-cache, actions-rs/cache, MartijnHols/actions-c"
+  },
+  {
+   "id": "cx16",
+   "tipo": "FN",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "yaml": "on: [pull_request, push]\njobs:\n  seed:\n    if: github.event_name == 'push' || github.actor == 'renovate[bot]'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: shared\n  release:\n    if: github.event_name == 'push'\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: shared\n      - run: ./deploy.sh\n",
+   "nota": "_reachable_events pega TODO `github.event_name == 'x'` do if e faz `reachable &= required`, tratando qualquer == como allow-list, sem entender que aqui o == está num `||` com um predicado NÃO-evento. O if real permite rodar em pull_request "
+  },
+  {
+   "id": "cx17",
+   "tipo": "FP",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [],
+   "yaml": "on: pull_request\njobs:\n  ci:\n    if: ${{ !(github.actor == 'dependabot[bot]') }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo apenas-humanos\n",
+   "nota": "BURACO MAIS GRAVE — inverte o significado de segurança. O discriminador _actor_bot_gate so olha o TOKEN do operador (== concede / != exclui) e e cego a uma negacao envolvente. Aqui `!(github.actor == 'dependabot[bot]')` EXCLUI o bot (equiva"
+  },
+  {
+   "id": "cx18",
+   "tipo": "FP",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [],
+   "yaml": "on: pull_request\njobs:\n  release:\n    if: github.actor == 'renovate-approver'\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./deploy.sh\n",
+   "nota": "_is_bot_login faz `'dependabot' in v or 'renovate' in v` (substring solto). Qualquer login HUMANO que contenha essas substrings — 'renovate-approver', 'dependabot-maintainer', ate 'not-dependabot' — e classificado como bot e DISPARA. Verifi"
+  },
+  {
+   "id": "cx19",
+   "tipo": "FN",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [
+    "falsifiable-actor-condition"
+   ],
+   "yaml": "on: pull_request\njobs:\n  automerge:\n    if: ${{ contains(github.actor, 'dependabot') }}\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n      pull-requests: write\n    steps:\n      - run: gh pr merge --auto\n        env:\n          GH_TOKEN: ${{ github.token }}\n",
+   "nota": "FN real e comum. Os regex _ACTOR_LEFT/_ACTOR_RIGHT so reconhecem a comparacao infixa `github.actor ==/!= '...'`. O gate por FUNCAO `contains(github.actor, 'dependabot')` — padrao muito usado para auto-merge de bot — nao tem `==`, entao nada"
+  },
+  {
+   "id": "cx20",
+   "tipo": "FN",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [
+    "falsifiable-actor-condition"
+   ],
+   "yaml": "on: pull_request\njobs:\n  automerge:\n    if: ${{ endsWith(github.actor, '[bot]') }}\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n      pull-requests: write\n    steps:\n      - run: gh pr merge --auto\n        env:\n          GH_TOKEN: ${{ github.token }}\n",
+   "nota": "FN. `endsWith(github.actor, '[bot]')` e a forma idiomatica de 'so bots' (qualquer conta [bot]) — literalmente mais perigosa que casar um bot especifico, porque concede a QUALQUER bot. Nenhum `==`, entao os regex nao casam. Verificado: retor"
+  },
+  {
+   "id": "cx21",
+   "tipo": "FN",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [
+    "falsifiable-actor-condition"
+   ],
+   "yaml": "on: pull_request\njobs:\n  automerge:\n    if: ${{ contains(fromJSON('[\"dependabot[bot]\",\"renovate[bot]\"]'), github.actor) }}\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n      pull-requests: write\n    steps:\n      - run: gh pr merge --auto\n        env:\n          GH_TOKEN: ${{ github.token }}\n",
+   "nota": "FN. Allowlist multi-bot: `contains(fromJSON('[\"dependabot[bot]\",\"renovate[bot]\"]'), github.actor)` — ordem de argumentos INVERTIDA (lista, depois o actor) e valores de bot embutidos num literal JSON. Sem `==` e o actor nao esta adjacente a "
+  },
+  {
+   "id": "cx22",
+   "tipo": "FN",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [
+    "falsifiable-actor-condition"
+   ],
+   "yaml": "on: pull_request\njobs:\n  automerge:\n    if: ${{ github.event.sender.login == 'dependabot[bot]' }}\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n      pull-requests: write\n    steps:\n      - run: gh pr merge --auto\n        env:\n          GH_TOKEN: ${{ github.token }}\n",
+   "nota": "FN de campo-de-identidade. O detector so conhece github.actor e github.triggering_actor. `github.event.sender.login` e o mesmo conceito (a conta que DISPAROU o webhook — muda em re-run/workflow_run, nao autentica o autor do PR), entao pela "
+  },
+  {
+   "id": "cx23",
+   "tipo": "FP",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [],
+   "yaml": "on: pull_request\njobs:\n  automerge:\n    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n      pull-requests: write\n    steps:\n      - run: gh pr merge --auto\n        env:\n          GH_TOKEN: ${{ github.token }}\n",
+   "nota": "Confirmacao de precisao (deve permanecer MUDO). github.event.pull_request.user.login e exatamente o campo que a fix_suggestion do proprio detector recomenda como robusto (autor real do PR, nao o disparador). Verificado: retorna [] — correto"
+  },
+  {
+   "id": "cx24",
+   "tipo": "FP",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [],
+   "yaml": "on: pull_request\njobs:\n  ci:\n    if: github.actor != 'dependabot[bot]'\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo humanos-apenas\n",
+   "nota": "Confirmacao pedida explicitamente: `!=` EXCLUI o bot (padrao seguro/comum de um step que usa segredo so para humanos) e NAO deve ser acusado. Verificado: retorna [] — correto. Serve de contraste direto com a FP-negacao-envolvente: o `!=` di"
+  },
+  {
+   "id": "cx25",
+   "tipo": "robustez",
+   "escopo_ids": [
+    "cache-poisoning",
+    "falsifiable-actor-condition"
+   ],
+   "esperado": [
+    "falsifiable-actor-condition"
+   ],
+   "yaml": "on: pull_request\njobs:\n  automerge:\n    if: ${{ github.event_name == 'pull_request' && github.triggering_actor == 'github-actions[bot]' }}\n    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n    steps:\n      - run: gh pr merge --auto\n        env:\n          GH_TOKEN: ${{ github.token }}\n",
+   "nota": "Confirmacao de que o detector ACERTA a forma composta: dentro de um `&&`, com github.triggering_actor (nao so actor) e um bot alem do dependabot (github-actions[bot]). finditer casa o subtermo e dispara. Verificado: retorna ['falsifiable-ac"
+  }
+ ]
+}
