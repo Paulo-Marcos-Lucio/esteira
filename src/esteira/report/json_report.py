@@ -78,6 +78,13 @@ def _coverage_dict(result: ScanResult) -> dict[str, Any]:
         "ran": result.checagens_executadas,
         "base_total": result.checagens_total,
         "omitted_by_operator": list(result.checagens_omitidas),
+        # Diretiva '# zizmor: ignore[regra]' cuja regra não mapeia para nenhuma checagem
+        # nossa: não suprimiu nada (fail-closed), mas sem isto pareceria "linha revisada,
+        # nada a ver" para quem só lê o relatório — ver SupressaoNaoMapeada.
+        "supressoes_nao_mapeadas": [
+            {"path": s.path, "line": s.line, "regra_zizmor": s.regra_zizmor}
+            for s in result.supressoes_nao_mapeadas
+        ],
     }
 
 

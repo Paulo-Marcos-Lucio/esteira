@@ -7,9 +7,9 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from esteira.checks.catalog import CATALOG, make_finding
-from esteira.checks.detectors import run_all
+from esteira.checks.detectors import run_all, zizmor_supressoes_nao_mapeadas
 from esteira.core.loader import iter_workflow_files, load
-from esteira.core.models import Finding, ScanResult
+from esteira.core.models import Finding, ScanResult, SupressaoNaoMapeada
 
 
 def _display_path(path: Path, base: Path) -> str:
@@ -30,13 +30,17 @@ def _display_path(path: Path, base: Path) -> str:
     return relative.as_posix()
 
 
-def _scan_file(path: Path, base: Path) -> list[Finding]:
+def _scan_file(path: Path, base: Path) -> tuple[list[Finding], list[SupressaoNaoMapeada]]:
     """Analisa um arquivo, jamais deixando uma exceção derrubar a varredura toda."""
     display = _display_path(path, base)
     try:
         workflow = load(path)
         workflow.path = display
-        return run_all(workflow)
+        nao_mapeadas = [
+            SupressaoNaoMapeada(path=display, line=linha, regra_zizmor=regra)
+            for linha, regra in zizmor_supressoes_nao_mapeadas(workflow)
+        ]
+        return run_all(workflow), nao_mapeadas
     except Exception as exc:
         return [
             make_finding(
@@ -45,7 +49,7 @@ def _scan_file(path: Path, base: Path) -> list[Finding]:
                 1,
                 f"Falha inesperada ao analisar o arquivo: {type(exc).__name__}: {exc}",
             )
-        ]
+        ], []
 
 
 def scan(
@@ -60,14 +64,17 @@ def scan(
     root = Path(root)
     base = root if root.is_dir() else root.parent
     findings: list[Finding] = []
+    nao_mapeadas: list[SupressaoNaoMapeada] = []
     files = iter_workflow_files(root)
     for path in files:
-        for finding in _scan_file(path, base):
+        arquivo_findings, arquivo_nao_mapeadas = _scan_file(path, base)
+        for finding in arquivo_findings:
             if only_set is not None and finding.check_id not in only_set:
                 continue
             if finding.check_id in skip_set:
                 continue
             findings.append(finding)
+        nao_mapeadas.extend(arquivo_nao_mapeadas)
 
     # Cobertura: o conjunto ATIVO de checagens é o catálogo depois de aplicar --only/--skip
     # (o mesmo recorte que filtrou os achados acima). O que ficou de fora é omissão do
@@ -83,4 +90,5 @@ def scan(
         root=str(base),
         checagens_omitidas=omitidas,
         checagens_total=len(catalogo),
+        supressoes_nao_mapeadas=tuple(nao_mapeadas),
     )
