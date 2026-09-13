@@ -207,6 +207,58 @@ _LAST_IDENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*$")
 # `esteira: ignore[regra-a, regra-b]` — captura a lista de regras da nossa própria diretiva de
 # supressão escopada. A linha já vem em minúsculas quando é consultada.
 _ESTEIRA_IGNORE_SCOPE = re.compile(r"esteira:\s*ignore\s*\[([^\]]*)\]")
+# `zizmor: ignore[regra-a, regra-b]` — a diretiva de supressão do PRÓPRIO zizmor (sempre
+# escopada por regra; ele não tem forma sem colchete). Reaproveitamos o parsing para saber
+# QUAIS regras do zizmor a linha está declarando revisadas — a decisão de suprimir ou não um
+# achado nosso vem do mapa abaixo, não do simples fato de a diretiva existir.
+_ZIZMOR_IGNORE_SCOPE = re.compile(r"zizmor:\s*ignore\s*\[([^\]]*)\]")
+
+# Mapa regra-do-zizmor → check_id(s) nosso(s) que cobrem a MESMA classe de achado. Antes deste
+# mapa, `_is_suppressed` honrava QUALQUER `# zizmor: ignore[...]` como "linha revisada" e calava
+# TODOS os achados dela — inclusive um achado nosso que a regra citada não tem nada a ver com.
+# Isso é fail-open: `# zizmor: ignore[template-injection]` (revisão de injeção via template)
+# apagava de brinde um `unpinned-action-thirdparty` na mesma linha, sem o mantenedor ter
+# revisado aquilo. O mapa fecha essa porta: só suprime o achado cujo check_id está no conjunto
+# mapeado da regra citada. Regra do zizmor que não aparece aqui como chave NUNCA suprime nada
+# (fail-closed) — ver `zizmor_supressoes_nao_mapeadas`, que devolve essas ocorrências para a
+# cobertura do relatório em vez de deixá-las desaparecer em silêncio.
+#
+# Não é exaustivo: cobre as regras do zizmor com correspondência clara a uma checagem nossa da
+# MESMA superfície (validado contra os três usos reais no repo — dangerous-triggers,
+# unpinned-images e excessive-permissions — e estendido às demais correspondências óbvias do
+# catálogo do zizmor 1.x). Regra nova ou ambígua entra como fail-closed até alguém decidir o
+# mapeamento — não o robô, na hora.
+_ZIZMOR_PARA_ESTEIRA: dict[str, frozenset[str]] = {
+    "template-injection": frozenset({"script-injection"}),
+    "dangerous-triggers": frozenset({"dangerous-trigger", "pull-request-target-checkout"}),
+    "excessive-permissions": frozenset({"broad-permissions", "missing-permissions"}),
+    "unpinned-images": frozenset({"unpinned-container-image"}),
+    "unpinned-uses": frozenset(
+        {
+            "unpinned-action-thirdparty",
+            "unpinned-action-firstparty",
+            "unpinned-reusable-workflow",
+        }
+    ),
+    "impostor-commit": frozenset({"unpinned-action-thirdparty"}),
+    "artipacked": frozenset({"checkout-credentials-in-artifact"}),
+    "secrets-inherit": frozenset({"secrets-inherit"}),
+    "unredacted-secrets": frozenset({"secret-in-run", "secret-to-thirdparty-action"}),
+    "insecure-commands": frozenset({"insecure-commands"}),
+    "known-vulnerable-actions": frozenset({"known-compromised-action"}),
+    "self-hosted-runner": frozenset({"self-hosted-runner"}),
+    "cache-poisoning": frozenset({"cache-poisoning"}),
+    "bot-conditions": frozenset({"falsifiable-actor-condition"}),
+}
+
+
+def _zizmor_regras_na_linha(lowered_line: str) -> set[str] | None:
+    """Regras citadas num `# zizmor: ignore[...]` da linha (já em minúsculas), ou None se a
+    linha não tem a diretiva. Conjunto vazio é possível (`ignore[]`) e é distinto de None."""
+    m = _ZIZMOR_IGNORE_SCOPE.search(lowered_line)
+    if m is None:
+        return None
+    return {r.strip() for r in m.group(1).split(",") if r.strip()}
 
 
 def run_all(wf: Workflow) -> list[Finding]:
@@ -263,10 +315,13 @@ def _is_suppressed(wf: Workflow, finding: Finding) -> bool:
       supressão, porque esconde o defeito exatamente onde alguém já estava olhando.
     - `# esteira: ignore` (sem colchete) marca a linha inteira como revisada e cala qualquer
       achado nela — é a forma ampla, explícita, para quem revisou o ponto todo.
-    - `# zizmor: ignore[...]` é honrada como "linha revisada pelo mantenedor". O espaço de nomes
-      de regras do zizmor não é o nosso, então não há mapeamento confiável entre `[regra]` deles
-      e o nosso `check_id`; tratamos a marca como declaração de revisão da linha. (Interop
-      deliberada; o escopo por regra vale só para a nossa própria diretiva.)
+    - `# zizmor: ignore[regra]` é ESCOPADA pela regra do zizmor, via `_ZIZMOR_PARA_ESTEIRA`: só
+      cala o achado nosso cujo `check_id` está no conjunto mapeado da regra citada. Regra do
+      zizmor fora do mapa não cala nada — fail-closed (ver `zizmor_supressoes_nao_mapeadas`).
+      Isto substitui o comportamento anterior de honrar QUALQUER `zizmor: ignore[...]` como
+      "linha revisada" e calar todo achado nela, que apagava achado sem relação com a regra
+      citada (ex.: `ignore[template-injection]` calava de brinde um `unpinned-action-thirdparty`
+      na mesma linha).
     """
     lines = wf.lines
     index = finding.line - 1
@@ -279,7 +334,30 @@ def _is_suppressed(wf: Workflow, finding: Finding) -> bool:
         return finding.check_id.lower() in regras
     if "esteira: ignore" in lowered:
         return True
-    return "zizmor: ignore" in lowered
+    regras_zizmor = _zizmor_regras_na_linha(lowered)
+    if regras_zizmor is None:
+        return False
+    return any(
+        finding.check_id in _ZIZMOR_PARA_ESTEIRA.get(regra, frozenset()) for regra in regras_zizmor
+    )
+
+
+def zizmor_supressoes_nao_mapeadas(wf: Workflow) -> list[tuple[int, str]]:
+    """Ocorrências de `# zizmor: ignore[regra]` cuja `regra` não está em
+    `_ZIZMOR_PARA_ESTEIRA`. Essas diretivas não suprimem nenhum achado nosso (fail-closed, em
+    `_is_suppressed`) — mas isso é fácil de confundir com "a linha está limpa": o mantenedor
+    escreveu uma diretiva de revisão e ela silenciosamente não fez nada. Devolver (linha, regra)
+    por ocorrência deixa a checagem entrar no bloco de cobertura do relatório
+    (`coverage.supressoes_nao_mapeadas`) em vez de desaparecer."""
+    out: list[tuple[int, str]] = []
+    for numero, linha in enumerate(wf.lines, start=1):
+        regras = _zizmor_regras_na_linha(linha.lower())
+        if regras is None:
+            continue
+        for regra in sorted(regras):
+            if regra not in _ZIZMOR_PARA_ESTEIRA:
+                out.append((numero, regra))
+    return out
 
 
 # --------------------------------------------------------------------------- #
