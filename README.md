@@ -16,7 +16,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![249 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![418 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -39,7 +39,7 @@ O Esteira encontra esses padrões e explica a correção — com número de linh
 
 ## 🔎 O que ele verifica
 
-As 17 checagens do catálogo — a mesma lista que `esteira rules` imprime (um teste falha o CI se
+As 22 checagens do catálogo — a mesma lista que `esteira rules` imprime (um teste falha o CI se
 esta tabela divergir do catálogo, inclusive na severidade).
 
 | Checagem | Risco | Severidade | OWASP 2025 / CWE |
@@ -61,22 +61,45 @@ esta tabela divergir do catálogo, inclusive na severidade).
 | `unpinned-reusable-workflow` | Reusable workflow por branch/tag | 🔵 Baixa | A03 · CWE-1357 |
 | `unpinned-container-image` | Imagem de `container:`/`services:`/`docker://` por tag, não por digest | 🔵 Baixa | A03 · CWE-1357 |
 | `missing-permissions` | Sem bloco `permissions` explícito | 🔵 Baixa | A01 · CWE-732 |
+| `known-compromised-action` | Ação de terceiro com incidente de supply-chain CONHECIDO (ex.: tj-actions, CVE-2025-30066) em uso | 🔴 Crítica | A03 · CWE-506 |
+| `ai-agent-rule-of-two` | Agente de IA em CI reúne os 3 fatores da Regra de Dois (entrada não-confiável + ferramentas + escrita/exfil) | 🟠 Alta | A05 · CWE-1427 |
+| `ai-agent-untrusted-input` | Agente de IA exposto a entrada não-confiável, sem canal de escrita confirmado (injeção de prompt) | 🟡 Média | A05 · CWE-1427 |
+| `cache-poisoning` | Chave de cache escrita em contexto não-confiável e restaurada em contexto confiável | 🟠 Alta | A03 · CWE-349 |
+| `falsifiable-actor-condition` | Porta de segurança apoiada em `github.actor` (falsificável) | 🟡 Média | A01 · CWE-807 |
 
 > **Edição do OWASP:** os rótulos são do **Top 10:2025**. O ano importa — `A03` é *Software Supply
 > Chain Failures* em 2025 e era *Injection* em 2021. Quem consome o relatório por máquina lê o campo
 > `owasp_edition` do JSON/SARIF em vez de interpretar a string.
 
+### Precisão da injeção — o que dispara e o que não
+
+`script-injection` decide pelo **contexto de onde o dado vem**, não pela mera presença de `${{ }}`. Além de `github.event.*` e `head_ref`, trata como **não-confiável**:
+
+- o **`client_payload` de `repository_dispatch`** — JSON 100% controlado por quem envia o dispatch: qualquer subcaminho (`github.event.client_payload.slash_command.args.named.*`, `.args.unnamed`, …) é entrada do atacante;
+- os **campos de evento de texto livre** — `release.body`/`.name`, `label.name`/`.description`, `milestone.title`/`.description` —, cujo conteúdo aceita Unicode, aspas e `$( )`.
+
+A severidade é calibrada pelo **privilégio do gatilho**: texto livre de fork anônimo (issue / PR / comentário) permanece **Crítica**; de um ator com escrita/triagem (release, label, milestone, dispatch) é **Alta** — escalação de insider, não atacante externo anônimo.
+
+E a ferramenta **não grita** onde não há charset de shell a injetar, evitando o falso-positivo que faria o time desligar a checagem:
+
+- um `input` resolvido como **`type: number` ou `boolean`** em todos os blocos `on.workflow_call`/`on.workflow_dispatch` que o declaram — o GitHub coage o valor antes de ele existir (um `input` `string`/`choice`/sem `type:` continua disparando);
+- `owner.login` e afins, de charset restrito `[A-Za-z0-9-]`;
+- uma expressão que **inteira** avalia para booleano: os operadores `&&`/`||` do GitHub são de curto-circuito e **retornam o operando**, então `github.event.issue.title == 'x' && github.event.issue.body || 'y'` devolve o corpo da issue e **é** marcado, enquanto `contains(github.event.issue.body, 'x')` (só `true`/`false` sai) não.
+
+Na mesma auditoria, `unpinned-container-image` passou a ancorar o achado na **chave estrutural** de onde a imagem foi lida (`container.image` / `services.<nome>.image`), nunca na primeira ocorrência textual da expressão — o que também faz o `# zizmor: ignore` / `# esteira: ignore` da linha da imagem voltar a suprimir corretamente.
+
 ---
 
 ## 🔬 O que foi medido
 
-Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (249 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (418 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
 
 > **Comparação honesta contra o zizmor** (o incumbente maduro do domínio): o benchmark reprodutível da suíte está em [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — versões e commits fixados, e diz onde a Esteira encontra menos que o zizmor. Onde a Esteira ganha é precisão em repositório limpo e calibração; **não vendemos superioridade de cobertura**.
 
-- **17 de 17 checagens** disparam na severidade **fixada em teste** contra casos sintéticos, com **zero divergência de severidade**. O meta-teste de catálogo é implacável: checagem nova nasce vermelha até ter caso positivo, severidade declarada, rótulo OWASP da edição e linha nesta tabela — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão do CI) faz a suíte falhar.
+- **17 de 22 checagens** disparam na severidade **fixada em teste** contra casos sintéticos, com **zero divergência de severidade**. O meta-teste de catálogo é implacável: checagem nova nasce vermelha até ter caso positivo, severidade declarada, rótulo OWASP da edição e linha nesta tabela — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão do CI) faz a suíte falhar.
 - **Zero falso-positivo** no workflow endurecido que **fixa as actions por SHA** e declara `permissions: contents: read`: ele sai com **nenhum achado**. Pinar por SHA e declarar o mínimo é exatamente o que a ferramenta cobra — quem já faz não recebe ruído.
-- **Corpus rotulado, versionado e público** em [`bench/`](bench/): 18 workflows positivos (**20 achados rotulados**, cobrindo as **17 de 17** regras do catálogo) e 5 negativos com **8 linhas-armadilha**. `python bench/avaliar.py` mede recall e precisão com **intervalo de Wilson** e sai com código 1 se aparecer falso-positivo ou falso-negativo; a mesma bateria roda no `pytest`, então corpus que apodrece quebra o CI. Medido em 2026-08-05: **20/20 recall, IC95% [84% ; 100%], zero falso-positivo**. **O que esse número não é:** os workflows foram escritos por quem escreveu a ferramenta; ele mede cobertura do catálogo contra casos canônicos, não acurácia contra pipelines de produção. Os limites estão listados em `bench/README.md`.
+- **Corpus rotulado, versionado e público** em [`bench/`](bench/): 23 workflows positivos (**25 achados rotulados**, cobrindo as **22 de 22** regras do catálogo) e 5 negativos com **8 linhas-armadilha**. `python bench/avaliar.py` mede recall e precisão com **intervalo de Wilson** e sai com código 1 se aparecer falso-positivo ou falso-negativo; a mesma bateria roda no `pytest`, então corpus que apodrece quebra o CI. Medido em 2026-09-11: **25/25 recall, IC95% [87% ; 100%], zero falso-positivo**. **O que esse número não é:** os workflows foram escritos por quem escreveu a ferramenta; ele mede cobertura do catálogo contra casos canônicos, não acurácia contra pipelines de produção. Os limites estão listados em `bench/README.md`.
+- **Corpus adversarial versionado** em [`tests/fixtures/cetico_ci_2026_09_11.json`](tests/fixtures/cetico_ci_2026_09_11.json): uma caçada cética multiagente atacou os quatro detectores mais novos (Regra de Dois de IA, ação comprometida, cache-poisoning, ator falsificável) e produziu 26 contraexemplos concretos — FP no padrão oficial de mitigação, formas de bypass, red-line. Cada veredito foi adjudicado rodando o scanner real; o corpus roda no `pytest` e trava a regressão de classe (um FP que volta, um FN que reabre).
 - **ReDoS eliminado no próprio portão.** O padrão de `curl | bash` tinha backtracking exponencial: uma linha `run:` de 129 caracteres travava a varredura por **7,1 s**, e cada ~19 caracteres a mais multiplicavam o tempo por ~14 (≈90 s numa linha de ~150 caracteres, rumo ao *timeout* do job — a ferramenta virava o DoS do pipeline que ela audita). Hoje a mesma entrada leva **< 0,01 s** (medido: ~0,00002 s), com um **teste que cronometra** e reprova a regressão.
 
 ---
@@ -164,8 +187,8 @@ esteira rules
 | `-f, --format` | `console` | `json` para consumir por máquina; `sarif` para a aba Security do GitHub |
 | `-o, --output` | *(stdout)* | grava o relatório num arquivo (obrigatório com nada em `console`; passar `-o` com `--format console` é erro de uso → exit 2) |
 | `--fail-on` | `high` | `critical` afrouxa o portão; `low`/`medium` aperta. `none` nunca falha (só relata) |
-| `--only` | *(todas)* | foca uma triagem numa ou mais checagens (id da coluna `esteira rules`); id desconhecido → exit 2 |
-| `--skip` | *(nenhuma)* | silencia uma checagem ruidosa no seu contexto sem desligar o resto |
+| `--only` | *(todas)* | foca uma triagem numa ou mais checagens (id da coluna `esteira rules`); id desconhecido → exit 2. Torna a varredura **parcial** — ver *Cobertura* |
+| `--skip` | *(nenhuma)* | silencia uma checagem ruidosa no seu contexto sem desligar o resto. Também torna a varredura **parcial** |
 
 ### Supressão inline (por linha)
 
@@ -194,8 +217,8 @@ Uma marca `# zizmor: ignore` de outro auditor também é respeitada como "linha 
 
 | Saída | Significado |
 | --- | --- |
-| `0` | Nenhum achado no nível de `--fail-on` ou acima (inclui "caminho existe, mas não tem workflow" — o aviso vai para o stderr) |
-| `1` | Achado com severidade `>= --fail-on` |
+| `0` | Nenhum achado no nível de `--fail-on` ou acima **e a varredura foi completa** (inclui "caminho existe, mas não tem workflow" — o aviso vai para o stderr) |
+| `1` | Achado com severidade `>= --fail-on` — **ou** a varredura foi parcial (`--only`/`--skip`) e não pode certificar ausência (ver *Cobertura*) |
 | `2` | Erro de uso: caminho inexistente, ID desconhecido em `--only`/`--skip`, `--output` com `--format console` |
 
 `--fail-on` aceita `none · info · low · medium · high · critical`. O **default do Esteira é `high`**.
@@ -210,15 +233,23 @@ cabeçalho ausente — um scanner de segredo deve ter o gatilho mais sensível.
 | Sentinela | `alta` (vocabulário PT) |
 | Guardião | `medium` |
 
+### Cobertura — uma varredura parcial não certifica limpo
+
+`--only`/`--skip` reduzem o conjunto de checagens que de fato rodou. Uma varredura recortada e **sem achados** certifica só o que foi executado, não o repositório inteiro — tratá-la como aprovação seria verde falso eterno no CI de quem roda uma checagem isolada. Por isso a cobertura é **declarada**, nas três frentes:
+
+- **Console:** o veredito limpo é qualificado — `✓ Nenhum problema nas checagens executadas`, seguido de `Cobertura parcial (N de M checagens) … Não avaliado: <ids>`. A mesma linha sai também quando há achados (ter encontrado algo não prova que o resto do catálogo estava limpo).
+- **JSON:** um bloco `coverage` com `partial` (a bandeira que o dashboard lê), `ran`, `base_total` e `omitted_by_operator` (as checagens que ficaram de fora).
+- **Portão do CI:** uma varredura parcial **não passa verde** — sai com código `1` mesmo sem achados. Para rodar uma checagem isolada de propósito sem reprovar o build, use `--fail-on none` (a saída explícita, que desliga o portão inteiro).
+
 ---
 
 ## 🔓 Versão Pro (privada) — hardening conduzido da sua cadeia de CI/CD
 
-**A engine é a mesma deste repositório** — o mesmo catálogo de 17 checagens que trava o CI aqui, com os mesmos números de campo (17 de 17 disparando na severidade fixada, zero falso-positivo no workflow endurecido). A versão Pro **não é um motor secreto**: é **serviço** — o trabalho humano em cima da engine que você já pode rodar.
+**A engine é a mesma deste repositório** — o mesmo catálogo de 22 checagens que trava o CI aqui, com os mesmos números de campo (22 de 22 disparando na severidade fixada, zero falso-positivo no workflow endurecido). A versão Pro **não é um motor secreto**: é **serviço** — o trabalho humano em cima da engine que você já pode rodar.
 
 | Dimensão | Ferramenta pública (você roda) | Pro · serviço (eu conduzo com você) |
 | --- | --- | --- |
-| **Engine** | mesma engine, mesmo catálogo de 17 checagens, mesma saída | **a mesma engine** — não há motor escondido; o que muda é o trabalho em cima dela |
+| **Engine** | mesma engine, mesmo catálogo de 22 checagens, mesma saída | **a mesma engine** — não há motor escondido; o que muda é o trabalho em cima dela |
 | **Escopo** | um repositório / um caminho por vez | **organização inteira / monorepo**, com cada achado adjudicado (descarto o falso-positivo, confirmo o real) |
 | **Achado** | apontado com linha, severidade e correção | **correção aplicada via Pull Request**: SHA-pin das actions, permissões mínimas por job, isolamento de `pull_request_target`, segredo fora do log — o *diff* pronto para revisar e mergear |
 | **Evidência** | relatório console / JSON / SARIF que você gera | SARIF/JSON versionado **antes × depois** (OWASP **A03:2025 — Software Supply Chain Failures**), para auditoria e conformidade |
@@ -244,7 +275,7 @@ flowchart TD
     A["<b>cli.py</b><br/>Typer · esteira scan"] --> ENG["<b>checks/engine.py</b><br/>orquestra a varredura"]
     ENG --> LOAD["<b>core/loader.py</b><br/>descoberta recursiva<br/>+ parse YAML"]
     LOAD --> DET["<b>checks/detectors.py</b><br/>estrutural + fallback<br/>por linha · fail-closed"]
-    DET --> CAT["<b>checks/catalog.py</b><br/>17 checagens · severidade<br/>OWASP 2025 · CWE"]
+    DET --> CAT["<b>checks/catalog.py</b><br/>22 checagens · severidade<br/>OWASP 2025 · CWE"]
     CAT --> RED["<b>core/redaction.py</b><br/>mascara credencial<br/>na evidência"]
     RED --> FND["<b>core/models.py</b><br/>Finding + ScanResult<br/>frozen"]
     FND --> PRV["<b>core/provenance.py</b><br/>commit · ruleset_hash<br/>artifact_sha256"]
@@ -274,7 +305,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ## 🔬 Qualidade de engenharia & método
 
-**Portões, medidos agora neste repo:** 249 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **96%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (16 arquivos) · `ruff` lint + format limpos (36 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+**Portões, medidos agora neste repo:** 418 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (53 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
 
 **Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
 
@@ -282,9 +313,9 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 - **Separação de responsabilidades:** `core/` (modelos + loader YAML) × `checks/` (catálogo, detectores, motor) × `report/` (console, json, sarif) × `cli.py`.
 - **Fonte única de verdade:** severidade + rótulo OWASP/CWE + recomendação vivem só em `checks/catalog.py` (um `CheckMeta` por checagem); os três renderizadores leem dele, sem duplicar rótulo.
-- **Contrato de saída versionado:** JSON com `schema: suite-appsec/1` e SARIF **2.1.0** (`$schema` do schemastore, catálogo completo como `rules`) para a aba Security.
-- **Relatório vinculável a um código:** o envelope do JSON — e o `runs[0].properties` do SARIF — carregam `commit` (o commit do repositório **auditado**: `ESTEIRA_COMMIT` → `git rev-parse HEAD` → `null` fora de repo git), `ruleset_hash` (SHA-256 do catálogo de 17 checagens) e `artifact_sha256` (auto-hash do relatório). Sem os três, um achado que desaparece na entrega seguinte é indistinguível de uma regra que foi afrouxada. **Para conferir o `artifact_sha256`:** ponha `null` no campo, serialize com `json.dumps(doc, sort_keys=True, ensure_ascii=False, separators=(",", ":"))` e tire o SHA-256 do UTF-8.
-- **Achado classificado, não só descrito:** todo achado do `-f json` também traz `type` (`trigger`, `permissions`, `supply_chain`, `script`, `secret_handling` ou `structure` — em qual superfície do workflow o achado vive) e `confidence` (`high`, `medium` ou `low` — confiança de que o fato capturado é risco explorável em qualquer contexto, não uma medida de acerto da extração, que é sempre determinística). Os dois são obrigatórios: `CheckMeta.finding_type`/`.confidence` não têm valor padrão, e `tests/test_catalogo.py::test_toda_checagem_declara_type_e_confidence` falha se alguma das 17 checagens não os declarar.
+- **Contrato de saída versionado:** JSON com `schema: suite-appsec/1` e SARIF **2.1.0** (`$schema` do schemastore, catálogo completo como `rules`) para a aba Security. O JSON carrega ainda um bloco `coverage` (`partial`/`ran`/`base_total`/`omitted_by_operator`) para o consumidor de máquina distinguir "limpo" de "não olhado" quando `--only`/`--skip` recortam a varredura.
+- **Relatório vinculável a um código:** o envelope do JSON — e o `runs[0].properties` do SARIF — carregam `commit` (o commit do repositório **auditado**: `ESTEIRA_COMMIT` → `git rev-parse HEAD` → `null` fora de repo git), `ruleset_hash` (SHA-256 do catálogo de 22 checagens) e `artifact_sha256` (auto-hash do relatório). Sem os três, um achado que desaparece na entrega seguinte é indistinguível de uma regra que foi afrouxada. **Para conferir o `artifact_sha256`:** ponha `null` no campo, serialize com `json.dumps(doc, sort_keys=True, ensure_ascii=False, separators=(",", ":"))` e tire o SHA-256 do UTF-8.
+- **Achado classificado, não só descrito:** todo achado do `-f json` também traz `type` (`trigger`, `permissions`, `supply_chain`, `script`, `secret_handling` ou `structure` — em qual superfície do workflow o achado vive) e `confidence` (`high`, `medium` ou `low` — confiança de que o fato capturado é risco explorável em qualquer contexto, não uma medida de acerto da extração, que é sempre determinística). Os dois são obrigatórios: `CheckMeta.finding_type`/`.confidence` não têm valor padrão, e `tests/test_catalogo.py::test_toda_checagem_declara_type_e_confidence` falha se alguma das 22 checagens não os declarar.
 - **Redação de credencial na evidência:** o `evidence` copia trecho da linha do workflow — e a regra `secret-in-run` existe justamente para achar linha com segredo. Toda credencial de **formato conhecido** (AWS, GitHub PAT, Stripe, Slack, Google, npm, PyPI, GitLab, SendGrid, JWT, bloco PEM) sai mascarada nas pontas, no console, no JSON e no `snippet` do SARIF. A redação vem **antes** do truncamento em 120 caracteres, senão um segredo que começa no caractere 110 sairia com 10 caracteres crus. Não há regra de entropia genérica de propósito: ela mastigaria o SHA de 40 hex do pin de action, que é a evidência principal de `unpinned-action-*`. **Limite assumido:** credencial de formato desconhecido (senha solta, token interno) não é redigida.
 - **Tipos estritos e imutabilidade:** `mypy --strict`, `from __future__ import annotations` em todo módulo, e os modelos de domínio (`Finding`, `CheckMeta`) são `@dataclass(frozen=True)`.
 

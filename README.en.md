@@ -67,6 +67,23 @@ this table diverges from the catalog, including on severity).
 > Chain Failures* in 2025 and was *Injection* in 2021. Anyone consuming the report by machine reads the
 > `owasp_edition` field in the JSON/SARIF instead of parsing the string.
 
+### Injection precision — what fires and what doesn't
+
+`script-injection` decides by **where the data comes from**, not by the mere presence of `${{ }}`. Beyond `github.event.*` and `head_ref`, it treats as **untrusted**:
+
+- the **`client_payload` of `repository_dispatch`** — JSON 100% controlled by whoever sends the dispatch: any subpath (`github.event.client_payload.slash_command.args.named.*`, `.args.unnamed`, …) is attacker input;
+- the **free-text event fields** — `release.body`/`.name`, `label.name`/`.description`, `milestone.title`/`.description` — whose content accepts Unicode, quotes and `$( )`.
+
+Severity is calibrated by the **trigger's privilege**: free text from an anonymous fork (issue / PR / comment) stays **Critical**; from an actor with write/triage access (release, label, milestone, dispatch) it's **High** — insider escalation, not an anonymous external attacker.
+
+And the tool **does not shout** where there is no shell charset to inject, avoiding the false positive that would make the team disable the check:
+
+- an `input` resolved as **`type: number` or `boolean`** across every `on.workflow_call`/`on.workflow_dispatch` block that declares it — GitHub coerces the value before it exists (a `string`/`choice`/untyped `input` still fires);
+- `owner.login` and the like, of restricted charset `[A-Za-z0-9-]`;
+- an expression that resolves to a boolean **as a whole**: GitHub's `&&`/`||` are short-circuit and **return the operand**, so `github.event.issue.title == 'x' && github.event.issue.body || 'y'` returns the issue body and **is** flagged, whereas `contains(github.event.issue.body, 'x')` (only `true`/`false` comes out) is not.
+
+In the same audit, `unpinned-container-image` now anchors the finding on the **structural key** where the image was read (`container.image` / `services.<name>.image`), never on the first textual occurrence of the expression — which also makes the `# zizmor: ignore` / `# esteira: ignore` on the image line suppress correctly again.
+
 ---
 
 ## 🔬 What was measured
@@ -165,8 +182,8 @@ esteira rules
 | `-f, --format` | `console` | `json` to consume by machine; `sarif` for GitHub's Security tab |
 | `-o, --output` | *(stdout)* | writes the report to a file (required for anything other than `console`; passing `-o` with `--format console` is a usage error → exit 2) |
 | `--fail-on` | `high` | `critical` loosens the gate; `low`/`medium` tightens it. `none` never fails (report only) |
-| `--only` | *(all)* | focuses a triage on one or more checks (id from the `esteira rules` column); unknown id → exit 2 |
-| `--skip` | *(none)* | silences a check that's noisy in your context without turning off the rest |
+| `--only` | *(all)* | focuses a triage on one or more checks (id from the `esteira rules` column); unknown id → exit 2. Makes the scan **partial** — see *Coverage* |
+| `--skip` | *(none)* | silences a check that's noisy in your context without turning off the rest. Also makes the scan **partial** |
 
 ### Inline suppression (per line)
 
@@ -195,8 +212,8 @@ A `# zizmor: ignore` mark from another auditor is also honored as a "reviewed li
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | No finding at or above the `--fail-on` level (includes "path exists but has no workflow" — the warning goes to stderr) |
-| `1` | Finding with severity `>= --fail-on` |
+| `0` | No finding at or above the `--fail-on` level **and the scan was complete** (includes "path exists but has no workflow" — the warning goes to stderr) |
+| `1` | Finding with severity `>= --fail-on` — **or** the scan was partial (`--only`/`--skip`) and cannot certify absence (see *Coverage*) |
 | `2` | Usage error: nonexistent path, unknown ID in `--only`/`--skip`, `--output` with `--format console` |
 
 `--fail-on` accepts `none · info · low · medium · high · critical`. **Esteira's default is `high`**.
@@ -210,6 +227,14 @@ missing header — a secrets scanner should have the more sensitive trigger.
 | Chaveiro | `high` |
 | Sentinela | `alta` (PT vocabulary) |
 | Guardião | `medium` |
+
+### Coverage — a partial scan doesn't certify clean
+
+`--only`/`--skip` reduce the set of checks that actually ran. A trimmed scan with **no findings** certifies only what was executed, not the whole repository — treating it as a pass would be an eternal false green in the CI of anyone running a single check. So coverage is **declared**, on three fronts:
+
+- **Console:** the clean verdict is qualified — the tool's output is PT-BR (`✓ Nenhum problema nas checagens executadas`, then `Cobertura parcial (N de M checagens) … Não avaliado: <ids>`). The same line also prints when there are findings (having found something doesn't prove the rest of the catalog was clean).
+- **JSON:** a `coverage` block with `partial` (the flag the dashboard reads), `ran`, `base_total` and `omitted_by_operator` (the checks left out).
+- **CI gate:** a partial scan **does not pass green** — it exits with code `1` even with no findings. To run a single check on purpose without failing the build, use `--fail-on none` (the explicit escape hatch, which turns off the gate entirely).
 
 ---
 
@@ -283,7 +308,7 @@ src/esteira/
 
 - **Separation of concerns:** `core/` (models + YAML loader) × `checks/` (catalog, detectors, engine) × `report/` (console, json, sarif) × `cli.py`.
 - **Single source of truth:** severity + OWASP/CWE label + recommendation live only in `checks/catalog.py` (one `CheckMeta` per check); all three renderers read from it, with no duplicated labels.
-- **Versioned output contract:** JSON with `schema: suite-appsec/1` and SARIF **2.1.0** (`$schema` from schemastore, the full catalog as `rules`) for the Security tab.
+- **Versioned output contract:** JSON with `schema: suite-appsec/1` and SARIF **2.1.0** (`$schema` from schemastore, the full catalog as `rules`) for the Security tab. The JSON also carries a `coverage` block (`partial`/`ran`/`base_total`/`omitted_by_operator`) so a machine consumer can tell "clean" from "not looked at" when `--only`/`--skip` trim the scan.
 - **Report traceable to a commit:** the JSON envelope — and SARIF's `runs[0].properties` — carry `commit` (the commit of the **audited** repository: `ESTEIRA_COMMIT` → `git rev-parse HEAD` → `null` outside a git repo), `ruleset_hash` (SHA-256 of the 17-check catalog), and `artifact_sha256` (self-hash of the report). Without all three, a finding that disappears in the next delivery is indistinguishable from a rule that was loosened. **To verify `artifact_sha256`:** set the field to `null`, serialize with `json.dumps(doc, sort_keys=True, ensure_ascii=False, separators=(",", ":"))`, and take the SHA-256 of the UTF-8 bytes.
 - **Credential redaction in evidence:** `evidence` copies a snippet of the workflow line — and the `secret-in-run` rule exists precisely to find the line with the secret. Every credential of a **known format** (AWS, GitHub PAT, Stripe, Slack, Google, npm, PyPI, GitLab, SendGrid, JWT, PEM block) comes out masked at the edges — in the console, in the JSON, and in SARIF's `snippet`. Redaction happens **before** the 120-character truncation, otherwise a secret starting at character 110 would come out with 10 raw characters exposed. There is no generic entropy rule, by design: it would chew through the 40-hex SHA of an action pin, which is the main evidence for `unpinned-action-*`. **Accepted limitation:** a credential of unknown format (a bare password, an internal token) is not redacted.
 - **Strict types and immutability:** `mypy --strict`, `from __future__ import annotations` in every module, and the domain models (`Finding`, `CheckMeta`) are `@dataclass(frozen=True)`.

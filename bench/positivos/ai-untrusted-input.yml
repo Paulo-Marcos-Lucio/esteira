@@ -1,0 +1,10 @@
+on: issues
+permissions:
+  contents: read
+jobs:
+  summarize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anthropics/claude-code-action@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          prompt: Resuma a issue

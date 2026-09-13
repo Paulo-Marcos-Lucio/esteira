@@ -1,0 +1,21 @@
+on: [pull_request, push]
+jobs:
+  seed:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: dist
+          key: build-artifacts-shared
+  release:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: dist
+          key: build-artifacts-shared
+      - run: ./deploy.sh

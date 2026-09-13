@@ -194,5 +194,40 @@
   "eh_achado": true,
   "regra": "insecure-commands",
   "nota": "ACTIONS_ALLOW_UNSECURE_COMMANDS reativa set-env/add-path (CVE-2020-15228)"
+ },
+ {
+  "arquivo": "positivos/compromised-action.yml",
+  "linha": 7,
+  "eh_achado": true,
+  "regra": "known-compromised-action",
+  "nota": "tj-actions/changed-files no SHA malicioso (CVE-2025-30066)"
+ },
+ {
+  "arquivo": "positivos/ai-rule-of-two.yml",
+  "linha": 8,
+  "eh_achado": true,
+  "regra": "ai-agent-rule-of-two",
+  "nota": "issues + claude-code-action + contents:write = Regra de Dois completa"
+ },
+ {
+  "arquivo": "positivos/ai-untrusted-input.yml",
+  "linha": 8,
+  "eh_achado": true,
+  "regra": "ai-agent-untrusted-input",
+  "nota": "issues + agente de IA, sem canal de escrita: so (1)+(2)"
+ },
+ {
+  "arquivo": "positivos/cache-poisoning.yml",
+  "linha": 8,
+  "eh_achado": true,
+  "regra": "cache-poisoning",
+  "nota": "chave de cache escrita em job de PR e restaurada em job de push"
+ },
+ {
+  "arquivo": "positivos/falsifiable-actor.yml",
+  "linha": 5,
+  "eh_achado": true,
+  "regra": "falsifiable-actor-condition",
+  "nota": "porta de seguranca por github.actor == dependabot[bot] (falsificavel)"
  }
 ]

@@ -113,8 +113,33 @@ def scan(
         )
 
     _emit(result, fmt, output)
+    _maybe_fail(result, fail_on)
+
+
+def _maybe_fail(result: ScanResult, fail_on: FailOn) -> None:
+    """Portão de saída do CI. Sai com 1 quando a política de gravidade é violada — OU quando a
+    varredura foi PARCIAL. Espelha o `_maybe_fail` do Sentinela: `--only <checagem> --fail-on
+    high` sem achados não pode ficar verde para sempre, porque a nota certificaria um
+    repositório que mal olhou. `--fail-on none` desliga o portão inteiro (inclusive a trava de
+    cobertura): é a saída explícita para quem roda uma checagem isolada de propósito.
+    """
+    if fail_on is FailOn.none:
+        return
     top = result.max_severity()
-    raise typer.Exit(1 if top is not None and top.rank >= fail_on.rank() else 0)
+    if top is not None and top.rank >= fail_on.rank():
+        raise typer.Exit(1)
+    if result.cobertura_parcial:
+        err.print(
+            Text.assemble(
+                ("Cobertura parcial", "yellow"),
+                f" ({result.checagens_executadas} de {result.checagens_total} checagens): "
+                "uma varredura parcial não certifica ausência de problema; o portão não passa "
+                "limpo. Não avaliado: ",
+                (", ".join(result.checagens_omitidas), "dim"),
+                ".",
+            )
+        )
+        raise typer.Exit(1)
 
 
 @app.command()

@@ -3,6 +3,68 @@
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não lançado]
+
+### Adicionado
+
+- **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
+  2025-2026 sem tocar a infra do cliente:
+  - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de
+    incidentes de supply-chain reais (tj-actions/changed-files `CVE-2025-30066` pelo SHA malicioso;
+    reviewdog/action-setup `CVE-2025-30154` pelo **commit definitivo** `f0d342d…`, não pela tag v1
+    já remediada). Normaliza subpath (`owner/action/dir@ref`). Seam `--online` (OSV/GHSA) injetável,
+    **default offline** — a detecção funciona sem rede.
+  - `ai-agent-rule-of-two` (🟠 Alta, A05:2025/CWE-1427) e `ai-agent-untrusted-input` (🟡 Média) — a
+    **Regra de Dois** de agentes de IA em CI: entrada não-confiável + agente com ferramentas +
+    canal de escrita/exfil no mesmo job. Reconhece `uses:` de agente, CLIs (`claude`/`codex`/…) e
+    pacotes (`npx @anthropic-ai/claude-code`); trata `author_association` OWNER/MEMBER como guarda
+    de confiança; rebaixa `pull_request` de fork (token/segredos retidos) a Média; vê exfil por
+    `upload-artifact` e reusable workflow de agente no nível do job.
+  - `cache-poisoning` (🟠 Alta, A03:2025/CWE-349) — mesma chave de cache escrita em contexto
+    não-confiável e restaurada em confiável; ignora chave por-run/por-contexto (`github.ref`,
+    `github.ref_name`, `github.sha`…) e reconhece drop-ins (`buildjet/cache`).
+  - `falsifiable-actor-condition` (🟡 Média, A01:2025/CWE-807) — `if:` que decide privilégio por
+    identidade de ator falsificável; cobre `==`, `contains/startsWith/endsWith`, allowlist por
+    `fromJSON`, `github.event.sender.login`, e ignora negação `!(...)` e `!=` (direção segura).
+- **Corpus adversarial versionado** (`tests/fixtures/cetico_ci_2026_09_11.json`): 26 contraexemplos
+  de uma caçada cética multiagente contra os quatro detectores acima, com veredito adjudicado pelo
+  scanner real; roda no `pytest` e trava a regressão de classe.
+- **Registro EAGER do catálogo** (`esteira/checks/__init__.py`): as checagens em módulos próprios se
+  auto-registram no import do pacote, não só na 1ª varredura — `set(CATALOG)` (validação de
+  `--only/--skip`, `--list`, `ruleset_hash`, laudo de cobertura) enxerga o ruleset COMPLETO e de
+  forma determinística.
+- **Cobertura declarada (a nota deixa de ser cega ao recorte).** `--only`/`--skip` reduzem o
+  conjunto de checagens que roda; uma varredura recortada e sem achados certificava o repositório
+  inteiro como limpo. Agora `ScanResult` carrega `checagens_omitidas`/`checagens_total`,
+  `engine.scan()` os computa a partir do catálogo, o console qualifica o veredito
+  (`✓ Nenhum problema nas checagens executadas` + linha `Cobertura parcial (N de M)… Não avaliado:`),
+  o JSON ganha um bloco `coverage` (`partial`/`ran`/`base_total`/`omitted_by_operator`) e o portão
+  do CI **não passa verde** numa varredura parcial (exit `1` mesmo sem achados; `--fail-on none`
+  é a saída explícita para uma checagem isolada de propósito). Espelha o `_maybe_fail` do Sentinela.
+  Invariante *property-based*: para qualquer subconjunto executado, `checagens_omitidas` é
+  exatamente `catálogo − ativo` e `partial` sse e só se algo ficou de fora.
+
+### Corrigido
+
+- **Injeção via `client_payload` de `repository_dispatch` deixava de ser marcada** (FN). Qualquer
+  subcaminho de `github.event.client_payload.*` (JSON 100% controlado por quem envia o dispatch)
+  passa a contar como entrada não-confiável, via regex de prefixo do subtree inteiro.
+- **Campos de evento de texto livre não eram tratados como não-confiáveis** (FN):
+  `release.body`/`.name`, `label.name`/`.description`, `milestone.title`/`.description` aceitam
+  Unicode/aspas/`$( )` e agora geram `script-injection`, com severidade **Alta** calibrada pelo
+  privilégio do gatilho (escalação de insider, não fork anônimo). `owner.login` (charset restrito)
+  segue de fora, de propósito.
+- **`input` de `type: number`/`boolean` gerava falso-positivo** (FP): o tipo é resolvido a partir
+  dos blocos `on.workflow_call`/`on.workflow_dispatch` que declaram o input — se todos derem
+  `number`/`boolean`, a interpolação de `${{ inputs.x }}` num `run:` não dispara (o GitHub coage o
+  valor antes de ele existir). `string`/`choice`/sem `type:` continuam disparando.
+- **Ternário booleano super-suprimia a injeção** (FN): os operadores `&&`/`||` do GitHub são de
+  curto-circuito e **retornam o operando**; só se suprime quando a expressão **inteira** avalia
+  para booleano, não quando existe um `==` em algum ponto da string.
+- **Âncora de achado de imagem caía na 1ª ocorrência textual da expressão** (FP): passa a apontar a
+  **chave estrutural** de onde a imagem foi lida (`container.image`/`services.<nome>.image`), o que
+  também reabilita a supressão `# zizmor: ignore` / `# esteira: ignore` na linha correta.
+
 ## [0.5.0] — 2026-08-05
 
 ### Adicionado
