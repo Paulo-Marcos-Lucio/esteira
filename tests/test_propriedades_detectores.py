@@ -24,7 +24,11 @@ import yaml
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from esteira.checks.ai_workflow import _UNTRUSTED_AI_TRIGGERS, check_ai_rule_of_two
+from esteira.checks.ai_workflow import (
+    _FORK_ISOLATED_TRIGGERS,
+    _UNTRUSTED_AI_TRIGGERS,
+    check_ai_rule_of_two,
+)
 from esteira.checks.compromised_actions import KNOWN_COMPROMISED, check_compromised_actions
 from esteira.checks.hardening_extra import check_cache_poisoning, check_falsifiable_actor
 from esteira.core.models import Severity, Workflow
@@ -142,6 +146,23 @@ def test_pull_request_de_fork_nunca_sobe_para_alta(perms: str, com_agente: bool)
     assert all(a.severity is not Severity.HIGH for a in achados)
 
 
+# Gatilhos não-confiáveis que NÃO são fork isolado: aqui o token de escrita e os segredos NÃO são
+# retidos, então a leg 3 (canal) de fato alcança um contexto privilegiado — a Regra de Dois fecha.
+_GATILHOS_NAO_CONFIAVEIS_NAO_FORK = sorted(_UNTRUSTED_AI_TRIGGERS - _FORK_ISOLATED_TRIGGERS)
+
+
+@given(gatilho=st.sampled_from(_GATILHOS_NAO_CONFIAVEIS_NAO_FORK))
+def test_regra_de_dois_completa_sempre_dispara_alta(gatilho: str) -> None:
+    """FN-classe (o lado positivo, que o teste de severidade só checava de forma vacuosa): gatilho
+    não-confiável NÃO-fork + agente de IA + canal de escrita (`write-all`) no MESMO job SEMPRE
+    fecha a Regra de Dois — exatamente um achado ALTO `ai-agent-rule-of-two`. Afrouxar qualquer
+    das três pernas (deixar de detectar o agente, o gatilho ou o canal) fica vermelho aqui."""
+    achados = check_ai_rule_of_two(_wf_agente(gatilho, "write-all", com_agente=True))
+    assert len(achados) == 1, f"a Regra de Dois não fechou para {gatilho!r}: {achados!r}"
+    assert achados[0].check_id == "ai-agent-rule-of-two"
+    assert achados[0].severity is Severity.HIGH
+
+
 @given(
     gatilho=st.sampled_from(_GATILHOS_NAO_CONFIAVEIS),
     perms=st.sampled_from(_PERMS),
@@ -210,6 +231,19 @@ def test_contexto_simetrico_de_cache_nunca_e_achado(evento: str) -> None:
     """FP-classe: escrita e restauração no MESMO contexto de gatilho (padrão save+restore benigno)
     não é envenenamento — só a ASSIMETRIA de confiança indica escrita-num / leitura-noutro."""
     assert check_cache_poisoning(_wf_cache("build-fixo", "build-fixo", evento, evento)) == []
+
+
+@given(sufixo=st.text("abcABC0-", min_size=0, max_size=8))
+def test_cache_assimetrico_com_chave_estavel_sempre_dispara(sufixo: str) -> None:
+    """FN-classe (o lado positivo, que `so_emite_seu_proprio_id` só checava de forma vacuosa): uma
+    chave ESTÁVEL (sem discriminador por-run) escrita em `pull_request` e restaurada em `push`
+    — contextos ASSIMÉTRICOS de confiança — SEMPRE gera exatamente um achado ALTO `cache-poisoning`.
+    É o vetor real; deixar de detectá-lo (o FN) fica vermelho aqui antes do merge."""
+    chave = f"build-{sufixo}"  # estável: nenhum token github.sha/ref/run_id
+    achados = check_cache_poisoning(_wf_cache(chave, chave, "pull_request", "push"))
+    assert len(achados) == 1, f"cache-poisoning não disparou para {chave!r}: {achados!r}"
+    assert achados[0].check_id == "cache-poisoning"
+    assert achados[0].severity is Severity.HIGH
 
 
 @given(sufixo=st.text("abcABC0-", min_size=0, max_size=8))

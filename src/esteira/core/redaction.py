@@ -105,13 +105,25 @@ def para_publicacao(evidencia: str | None, *, keep: int = KEEP_PUBLICADO) -> str
     muda nada). Texto sem `…` (uma evidência que não era credencial, como o pin de uma action)
     passa intacto. Fecha a classe: para toda credencial de formato conhecido, o que sobe no SARIF
     expõe no máximo ``keep`` caracteres por ponta.
+
+    **Colapso do valor curto (receita comum da suíte).** O caminho PUBLICADO é mais estrito que o
+    de triagem: quando o que sobra das duas pontas VISÍVEIS já cabe numa só (``len(pre)+len(suf)
+    <= keep``), o valor mascarado era curto demais para expor um único caractere no artefato que
+    SOBE pro Code Scanning — reduz a só o marcador. É o mesmo veredicto do stub canônico
+    ``mark if len(x) <= 2*keep`` que os quatro tools da suíte compartilham: uma credencial de
+    formato conhecido tem pontas longas (4+4 na triagem → 2+2 aqui, total 4 > keep=2, intacta),
+    então só o token minúsculo — que a máscara de triagem já reduzira a ``X…`` — colapsa. Isto NÃO
+    revela nada a mais (só a menos) e mantém a idempotência (o marcador sozinho já é ponto fixo).
     """
     if not evidencia:
         return evidencia
 
     def encurta(m: re.Match[str]) -> str:
-        pre, suf = m.group(1), m.group(2)
-        return f"{pre[:keep]}{_MASCARA}{suf[-keep:] if suf else ''}"
+        pre = m.group(1)[:keep]
+        suf = m.group(2)[-keep:] if m.group(2) else ""
+        if len(pre) + len(suf) <= keep:
+            return _MASCARA
+        return f"{pre}{_MASCARA}{suf}"
 
     return _TOKEN_MASCARADO.sub(encurta, evidencia)
 
