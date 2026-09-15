@@ -30,7 +30,11 @@ def test_envelope_json_carrega_os_tres_eixos_de_proveniencia(
 
     doc = json.loads(to_json(scan(vuln_repo)))
     assert doc["commit"] == "0" * 40
-    assert len(doc["ruleset_hash"]) == 64
+    # `commit` da Esteira é o commit do repositório AUDITADO — o envelope declara isso.
+    assert doc["commit_scope"] == "target"
+    # `ruleset_hash` carrega o prefixo auto-descritivo `sha256:` (receita única da suíte).
+    assert doc["ruleset_hash"].startswith("sha256:")
+    assert len(doc["ruleset_hash"].removeprefix("sha256:")) == 64
     assert len(doc["artifact_sha256"]) == 64
 
 
@@ -127,8 +131,27 @@ def test_sarif_declara_edicao_e_proveniencia_no_nivel_do_run(
 
     run = json.loads(to_sarif(scan(vuln_repo)))["runs"][0]
     assert run["properties"]["owasp_edition"]
-    assert run["properties"]["commit"] == "b" * 40
-    assert len(run["properties"]["ruleset_hash"]) == 64
+    # O commit vai no slot CANÔNICO que o Code Scanning lê — não mais enterrado em `properties`.
+    assert run["versionControlProvenance"][0]["revisionId"] == "b" * 40
+    assert "commit" not in run["properties"]
+    assert run["properties"]["commit_scope"] == "target"
+    assert run["properties"]["ruleset_hash"].startswith("sha256:")
+    assert len(run["properties"]["ruleset_hash"].removeprefix("sha256:")) == 64
+
+
+def test_sarif_omite_proveniencia_de_vcs_fora_de_repo_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fora de um repo git a resposta honesta é AUSÊNCIA do carimbo — não um `revisionId: null`
+    que parece informação. O bloco `versionControlProvenance` some por inteiro."""
+    _sem_git(monkeypatch)
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "w.yml").write_text("on: push\njobs:\n  b:\n    runs-on: x\n    steps: []\n", "utf-8")
+    from esteira.checks.engine import scan
+
+    run = json.loads(to_sarif(scan(tmp_path)))["runs"][0]
+    assert "versionControlProvenance" not in run
 
 
 def test_to_document_nao_explode_sem_raiz(monkeypatch: pytest.MonkeyPatch) -> None:

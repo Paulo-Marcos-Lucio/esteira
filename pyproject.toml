@@ -9,7 +9,7 @@ description = "Auditor de segurança de pipelines CI/CD (GitHub Actions) — scr
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Paulo Marcos Lucio" }]
+authors = [{ name = "Paulo Marcos Lucio", email = "contatopml26@gmail.com" }]
 keywords = ["security", "ci-cd", "github-actions", "devsecops", "supply-chain", "appsec", "sarif"]
 classifiers = [
   "Development Status :: 4 - Beta",

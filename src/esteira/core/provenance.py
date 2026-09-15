@@ -31,6 +31,12 @@ _SHA_COMPLETO = re.compile(r"^[0-9a-f]{40}$")
 # mudança nas REGRAS — os dois casos movem o hash, e só o segundo é notícia.
 _RULESET_SCHEMA = "esteira-ruleset/1"
 
+# O que o campo `commit` do envelope SIGNIFICA. Na suíte AppSec o mesmo nome carrega dois
+# sentidos: no Sentinela/Chaveiro é o commit da FERRAMENTA; aqui (e no Guardião) é o commit do
+# repositório AUDITADO. Sem discriminador, um cliente que verifica os quatro relatórios com uma
+# receita só não sabe contra o que o SHA foi carimbado. A Esteira audita o ALVO → "target".
+COMMIT_SCOPE = "target"
+
 
 def commit(root: Path | str | None = None) -> str | None:
     """SHA do commit do código auditado: ``ESTEIRA_COMMIT`` → ``git rev-parse HEAD`` → ``None``.
@@ -70,11 +76,14 @@ def commit(root: Path | str | None = None) -> str | None:
 
 
 def ruleset_hash() -> str:
-    """SHA-256 do catálogo inteiro: id, título, severidade, recomendação, OWASP e CWE.
+    """SHA-256 do catálogo inteiro, com prefixo ``sha256:``: id, título, severidade, recomendação,
+    OWASP e CWE.
 
-    Inclui a RECOMENDAÇÃO de propósito. Ela é texto entregue ao cliente: se a orientação de
-    remediação muda, o relatório mudou de conteúdo e o destinatário tem direito de perceber
-    pelo hash, mesmo que a detecção seja idêntica.
+    O prefixo ``sha256:`` é auto-descritivo — diz o algoritmo sem o consumidor ter de adivinhar
+    pelo comprimento — e uniformiza a receita de verificação com o resto da suíte (uma só receita
+    confere os quatro relatórios). Inclui a RECOMENDAÇÃO de propósito. Ela é texto entregue ao
+    cliente: se a orientação de remediação muda, o relatório mudou de conteúdo e o destinatário
+    tem direito de perceber pelo hash, mesmo que a detecção seja idêntica.
     """
     from esteira.checks.catalog import CATALOG, OWASP_EDITION
 
@@ -93,7 +102,7 @@ def ruleset_hash() -> str:
             for meta in sorted(CATALOG.values(), key=lambda m: m.id)
         ],
     }
-    return canonical_sha256(material)
+    return f"sha256:{canonical_sha256(material)}"
 
 
 def artifact_sha256(document: dict[str, Any]) -> str:

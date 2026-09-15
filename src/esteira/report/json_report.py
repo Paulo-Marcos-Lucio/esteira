@@ -50,6 +50,10 @@ def to_document(result: ScanResult) -> dict[str, Any]:
         # vinculável a um estado do código nem a um estado do catálogo, e um achado que
         # desaparece na entrega seguinte é indistinguível de uma regra que foi afrouxada.
         "commit": provenance.commit(result.root),
+        # Discriminador do que `commit` significa: aqui é o commit do repositório AUDITADO
+        # ("target"), não o da ferramenta — para o cliente verificar os quatro relatórios da
+        # suíte com uma receita só, sem adivinhar contra o que o SHA foi carimbado.
+        "commit_scope": provenance.COMMIT_SCOPE,
         "ruleset_hash": provenance.ruleset_hash(),
         "artifact_sha256": None,
         # Cobertura: o consumidor de máquina (dashboard/CI) precisa distinguir "limpo" de
