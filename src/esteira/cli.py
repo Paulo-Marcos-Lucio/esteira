@@ -61,9 +61,9 @@ def _root(
     pass
 
 
-def _emit(result: ScanResult, fmt: Format, output: Path | None) -> None:
+def _emit(result: ScanResult, fmt: Format, output: Path | None, *, show_suppressed: bool) -> None:
     if fmt is Format.console:
-        console_report.render(result)
+        console_report.render(result, show_suppressed=show_suppressed)
         return
     payload = to_json(result) if fmt is Format.json else to_sarif(result)
     if output is not None:
@@ -85,6 +85,12 @@ def scan(
     fail_on: FailOn = typer.Option(FailOn.high, "--fail-on", help="Severidade que faz sair com 1."),
     only: list[str] = typer.Option([], "--only", help="Roda apenas estas checagens."),
     skip: list[str] = typer.Option([], "--skip", help="Pula estas checagens."),
+    show_suppressed: bool = typer.Option(
+        False,
+        "--show-suppressed",
+        help="Lista no console os achados calados por diretiva inline "
+        "('# esteira: ignore' / '# zizmor: ignore'), com a justificativa de cada um.",
+    ),
 ) -> None:
     """Audita os workflows do GitHub Actions."""
     unknown = sorted((set(only) | set(skip)) - set(CATALOG))
@@ -112,7 +118,7 @@ def scan(
             )
         )
 
-    _emit(result, fmt, output)
+    _emit(result, fmt, output, show_suppressed=show_suppressed)
     _maybe_fail(result, fail_on)
 
 

@@ -17,7 +17,7 @@ import yaml
 
 from esteira.checks.catalog import make_finding
 from esteira.core.loader import get_triggers, trigger_names
-from esteira.core.models import Finding, Severity, Workflow
+from esteira.core.models import Finding, Severity, SuppressedFinding, Workflow
 from esteira.core.redaction import evidence as evidencia
 
 # Contextos controláveis por terceiros — nunca devem ir direto para o shell.
@@ -210,6 +210,21 @@ _ESTEIRA_IGNORE_SCOPE = re.compile(r"esteira:\s*ignore\s*\[([^\]]*)\]")
 
 
 def run_all(wf: Workflow) -> list[Finding]:
+    """Achados VISÍVEIS (o que o portão do CI avalia). Suprimidos ficam de fora — quem também
+    precisa deles usa :func:`run_all_partitioned`."""
+    visiveis, _suprimidos = run_all_partitioned(wf)
+    return visiveis
+
+
+def run_all_partitioned(wf: Workflow) -> tuple[list[Finding], list[SuppressedFinding]]:
+    """Roda todas as checagens e separa achados visíveis dos calados por diretiva inline.
+
+    Antes, achados suprimidos eram descartados sem deixar rastro (`_is_suppressed` só filtrava).
+    Uma supressão que ninguém consegue auditar é indistinguível de um achado que nunca existiu —
+    exatamente o vetor que o relatório de proveniência tenta fechar para o resto da varredura.
+    Aqui os dois grupos saem juntos, na mesma passada, para o chamador decidir o que fazer com
+    cada um (o CI só olha `visiveis`; o JSON/SARIF/console relatam `suprimidos` à parte).
+    """
     out: list[Finding] = []
     if wf.parse_error is not None:
         out.append(
@@ -224,7 +239,7 @@ def run_all(wf: Workflow) -> list[Finding]:
         )
     if wf.data is None:
         out += _fallback_checks(wf)
-        return [f for f in out if not _is_suppressed(wf, f)]
+        return _partition(wf, out)
     out += check_malformed_jobs(wf)
     out += check_triggers(wf)
     out += check_ppt_checkout(wf)
@@ -249,13 +264,26 @@ def run_all(wf: Workflow) -> list[Finding]:
     out += check_ai_rule_of_two(wf)
     out += check_cache_poisoning(wf)
     out += check_falsifiable_actor(wf)
-    return [f for f in out if not _is_suppressed(wf, f)]
+    return _partition(wf, out)
 
 
-def _is_suppressed(wf: Workflow, finding: Finding) -> bool:
+def _partition(wf: Workflow, out: list[Finding]) -> tuple[list[Finding], list[SuppressedFinding]]:
+    visiveis: list[Finding] = []
+    suprimidos: list[SuppressedFinding] = []
+    for finding in out:
+        motivo = _suppression_reason(wf, finding)
+        if motivo is None:
+            visiveis.append(finding)
+        else:
+            suprimidos.append(SuppressedFinding(finding=finding, justification=motivo))
+    return visiveis, suprimidos
+
+
+def _suppression_reason(wf: Workflow, finding: Finding) -> str | None:
     """Respeita supressão inline '# zizmor: ignore' / '# esteira: ignore' na linha do achado.
 
-    Três formas, em ordem de precedência:
+    Devolve a justificativa (a diretiva, verbatim, como apareceu na linha) quando o achado foi
+    calado, ou `None` quando não foi. Três formas, em ordem de precedência:
 
     - `# esteira: ignore[regra-a, regra-b]` é ESCOPADA: só cala os achados cujo `check_id`
       está na lista. Sem isso, uma diretiva escrita para uma regra silenciaria em silêncio um
@@ -271,15 +299,32 @@ def _is_suppressed(wf: Workflow, finding: Finding) -> bool:
     lines = wf.lines
     index = finding.line - 1
     if not 0 <= index < len(lines):
-        return False
-    lowered = lines[index].lower()
+        return None
+    linha = lines[index]
+    lowered = linha.lower()
     escopo = _ESTEIRA_IGNORE_SCOPE.search(lowered)
     if escopo is not None:
         regras = {r.strip() for r in escopo.group(1).split(",") if r.strip()}
-        return finding.check_id.lower() in regras
-    if "esteira: ignore" in lowered:
-        return True
-    return "zizmor: ignore" in lowered
+        if finding.check_id.lower() in regras:
+            return _directiva(linha, escopo.start())
+        return None
+    pos = lowered.find("esteira: ignore")
+    if pos != -1:
+        return _directiva(linha, pos)
+    pos = lowered.find("zizmor: ignore")
+    if pos != -1:
+        return _directiva(linha, pos)
+    return None
+
+
+def _directiva(linha: str, pos_chave: int) -> str:
+    """Recorta só o comentário de supressão da linha (do `#` que o abre até o fim), redigido e
+    truncado como qualquer evidência do relatório — a linha inteira pode conter o comando/valor
+    que motivou o achado, e a justificativa não precisa repeti-lo para ser legível."""
+    inicio = linha.rfind("#", 0, pos_chave)
+    if inicio == -1:
+        inicio = pos_chave
+    return evidencia(linha[inicio:].strip())
 
 
 # --------------------------------------------------------------------------- #

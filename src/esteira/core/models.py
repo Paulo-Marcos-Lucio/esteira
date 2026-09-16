@@ -47,6 +47,19 @@ class Finding:
     fix_suggestion: str | None = None
 
 
+@dataclass(frozen=True)
+class SuppressedFinding:
+    """Um achado que uma checagem gerou mas que foi calado por diretiva inline na linha.
+
+    Guarda o achado original (para reportar severidade/local como sempre) mais a
+    `justification`: a diretiva honrada, verbatim, para quem lê o relatório saber POR QUE
+    o achado não conta contra a varredura sem precisar abrir o workflow de novo.
+    """
+
+    finding: Finding
+    justification: str
+
+
 @dataclass
 class Workflow:
     """Um arquivo de workflow carregado: texto cru + árvore YAML."""
@@ -77,6 +90,11 @@ class Workflow:
 @dataclass
 class ScanResult:
     findings: list[Finding] = field(default_factory=list)
+    # Achados que uma checagem gerou mas que uma diretiva inline calou (`# esteira: ignore`,
+    # `# zizmor: ignore`). Separado de `findings` de propósito: o portão do CI (`_maybe_fail`)
+    # e todo consumidor que já lia `.findings` continuam vendo só o que está aberto — supressão
+    # não é ausência, mas também não é um achado ativo. Quem quer a supressão pede por ela.
+    suppressed: list[SuppressedFinding] = field(default_factory=list)
     files_scanned: int = 0
     # Raiz varrida, carregada até o relatório porque a proveniência (`commit`) tem de
     # identificar o CÓDIGO AUDITADO, não o diretório de onde a ferramenta foi invocada:
@@ -109,3 +127,11 @@ class ScanResult:
 
     def sorted(self) -> list[Finding]:
         return sorted(self.findings, key=lambda f: (-f.severity.rank, f.path, f.line))
+
+    def suppressed_sorted(self) -> list[SuppressedFinding]:
+        """Mesma ordem de `sorted()` (severidade desc., depois path/linha), para o relatório
+        listar os suprimidos com a mesma previsibilidade dos achados abertos."""
+        return sorted(
+            self.suppressed,
+            key=lambda s: (-s.finding.severity.rank, s.finding.path, s.finding.line),
+        )
