@@ -37,7 +37,7 @@ from typing import Any
 
 from esteira.checks.catalog import CATALOG, CheckMeta, make_finding
 from esteira.core.loader import trigger_names
-from esteira.core.models import Finding, Severity, Workflow
+from esteira.core.models import Confidence, Finding, FindingType, Severity, Workflow
 
 CATALOG_ENTRIES: list[CheckMeta] = [
     CheckMeta(
@@ -52,6 +52,8 @@ CATALOG_ENTRIES: list[CheckMeta] = [
         "Detecção estática/offline.",
         "A03:2025 Software Supply Chain Failures",
         "CWE-349",
+        finding_type=FindingType.SUPPLY_CHAIN,
+        confidence=Confidence.MEDIUM,
     ),
     CheckMeta(
         "falsifiable-actor-condition",
@@ -64,6 +66,8 @@ CATALOG_ENTRIES: list[CheckMeta] = [
         "'github.event.pull_request.user.login'. Detecção estática/offline.",
         "A01:2025 Broken Access Control",
         "CWE-807",
+        finding_type=FindingType.PERMISSIONS,
+        confidence=Confidence.MEDIUM,
     ),
 ]
 

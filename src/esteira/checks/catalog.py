@@ -9,9 +9,9 @@ e no campo `owasp_edition` do JSON/SARIF, para quem consome por máquina.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from esteira.core.models import Finding, Severity
+from esteira.core.models import Confidence, Finding, FindingType, Severity
 from esteira.core.redaction import redact
 
 # Edição do OWASP Top 10 usada nos rótulos deste catálogo.
@@ -26,6 +26,11 @@ class CheckMeta:
     recommendation: str
     owasp: str | None = None
     cwe: str | None = None
+    # `kw_only`: obrigatórios (sem default) sem forçar reordenar os 17 construtores
+    # abaixo, que já passam owasp/cwe posicionalmente. Uma checagem nova sem os dois
+    # quebra a IMPORTAÇÃO do módulo — ver EV-12 no LEDGER da cadência.
+    finding_type: FindingType = field(kw_only=True)
+    confidence: Confidence = field(kw_only=True)
 
 
 CATALOG: dict[str, CheckMeta] = {
@@ -39,6 +44,8 @@ CATALOG: dict[str, CheckMeta] = {
             'Passe por uma variável de ambiente e use "$VAR" com aspas.',
             "A05:2025 Injection",
             "CWE-94",
+            finding_type=FindingType.SCRIPT,
+            confidence=Confidence.HIGH,
         ),
         CheckMeta(
             "pull-request-target-checkout",
@@ -48,6 +55,8 @@ CATALOG: dict[str, CheckMeta] = {
             "código do PR (head) nesse contexto — é execução de código não-confiável com privilégio.",
             "A08:2025 Software or Data Integrity Failures",
             "CWE-94",
+            finding_type=FindingType.TRIGGER,
+            confidence=Confidence.HIGH,
         ),
         CheckMeta(
             "unpinned-action-thirdparty",
@@ -59,6 +68,8 @@ CATALOG: dict[str, CheckMeta] = {
             "que a tag (que ao menos recebe a correção do mantenedor).",
             "A03:2025 Software Supply Chain Failures",
             "CWE-1357",
+            finding_type=FindingType.SUPPLY_CHAIN,
+            confidence=Confidence.HIGH,
         ),
         CheckMeta(
             "broad-permissions",
@@ -67,6 +78,8 @@ CATALOG: dict[str, CheckMeta] = {
             "Evite 'write-all' / 'contents: write' global. Declare o mínimo necessário por job.",
             "A01:2025 Broken Access Control",
             "CWE-732",
+            finding_type=FindingType.PERMISSIONS,
+            confidence=Confidence.MEDIUM,
         ),
         CheckMeta(
             "secret-in-run",
@@ -82,6 +95,8 @@ CATALOG: dict[str, CheckMeta] = {
             "que entrega o segredo a todos os steps seguintes.",
             "A09:2025 Security Logging and Alerting Failures",
             "CWE-532",
+            finding_type=FindingType.SECRET_HANDLING,
+            confidence=Confidence.HIGH,
         ),
         CheckMeta(
             "insecure-commands",
@@ -93,6 +108,8 @@ CATALOG: dict[str, CheckMeta] = {
             "Use os arquivos $GITHUB_ENV / $GITHUB_PATH com valores confiáveis.",
             "A05:2025 Injection",
             "CWE-94",
+            finding_type=FindingType.SCRIPT,
+            confidence=Confidence.HIGH,
         ),
         CheckMeta(
             "curl-pipe-shell",
@@ -102,6 +119,8 @@ CATALOG: dict[str, CheckMeta] = {
             "código arbitrário da rede sem verificação.",
             "A03:2025 Software Supply Chain Failures",
             "CWE-494",
+            finding_type=FindingType.SCRIPT,
+            confidence=Confidence.MEDIUM,
         ),
         CheckMeta(
             "self-hosted-runner",
@@ -111,6 +130,8 @@ CATALOG: dict[str, CheckMeta] = {
             "Use runners efêmeros e isole a rede.",
             "A08:2025 Software or Data Integrity Failures",
             "CWE-668",
+            finding_type=FindingType.TRIGGER,
+            confidence=Confidence.MEDIUM,
         ),
         CheckMeta(
             "dangerous-trigger",
@@ -121,6 +142,8 @@ CATALOG: dict[str, CheckMeta] = {
             "(checkout do PR) é reportado à parte como 'pull-request-target-checkout'.",
             "A08:2025 Software or Data Integrity Failures",
             "CWE-269",
+            finding_type=FindingType.TRIGGER,
+            confidence=Confidence.LOW,
         ),
         CheckMeta(
             "unpinned-action-firstparty",
@@ -130,6 +153,8 @@ CATALOG: dict[str, CheckMeta] = {
             "reprodutíveis e imunes a mudança de tag.",
             "A03:2025 Software Supply Chain Failures",
             "CWE-1357",
+            finding_type=FindingType.SUPPLY_CHAIN,
+            confidence=Confidence.LOW,
         ),
         CheckMeta(
             "unpinned-reusable-workflow",
@@ -140,6 +165,8 @@ CATALOG: dict[str, CheckMeta] = {
             "risco é menor, e algumas infra-CI exigem `@main` (o próprio arquivo pode documentar).",
             "A03:2025 Software Supply Chain Failures",
             "CWE-1357",
+            finding_type=FindingType.SUPPLY_CHAIN,
+            confidence=Confidence.MEDIUM,
         ),
         CheckMeta(
             "missing-permissions",
@@ -149,6 +176,8 @@ CATALOG: dict[str, CheckMeta] = {
             "do padrão da organização.",
             "A01:2025 Broken Access Control",
             "CWE-732",
+            finding_type=FindingType.PERMISSIONS,
+            confidence=Confidence.LOW,
         ),
         CheckMeta(
             "secrets-inherit",
@@ -159,6 +188,8 @@ CATALOG: dict[str, CheckMeta] = {
             "sobretudo se o reusable não for fixado por SHA ou for de outra organização.",
             "A03:2025 Software Supply Chain Failures",
             "CWE-522",
+            finding_type=FindingType.PERMISSIONS,
+            confidence=Confidence.MEDIUM,
         ),
         CheckMeta(
             "secret-to-thirdparty-action",
@@ -171,6 +202,8 @@ CATALOG: dict[str, CheckMeta] = {
             "(40 hex) e passe apenas o token de menor escopo necessário.",
             "A03:2025 Software Supply Chain Failures",
             "CWE-522",
+            finding_type=FindingType.SECRET_HANDLING,
+            confidence=Confidence.HIGH,
         ),
         CheckMeta(
             "unpinned-container-image",
@@ -181,6 +214,8 @@ CATALOG: dict[str, CheckMeta] = {
             "reprodutíveis e imunes a supply-chain.",
             "A03:2025 Software Supply Chain Failures",
             "CWE-1357",
+            finding_type=FindingType.SUPPLY_CHAIN,
+            confidence=Confidence.HIGH,
         ),
         CheckMeta(
             "checkout-credentials-in-artifact",
@@ -193,6 +228,8 @@ CATALOG: dict[str, CheckMeta] = {
             "precisa empurrar commits, ou restrinja o 'path' do upload ao diretório de build.",
             "A02:2025 Security Misconfiguration",
             "CWE-522",
+            finding_type=FindingType.SECRET_HANDLING,
+            confidence=Confidence.HIGH,
         ),
         CheckMeta(
             "invalid-yaml",
@@ -203,6 +240,8 @@ CATALOG: dict[str, CheckMeta] = {
             "isto falha o CI por padrão (fail-closed), em vez de passar como se estivesse limpo.",
             None,
             "CWE-1288",
+            finding_type=FindingType.STRUCTURE,
+            confidence=Confidence.HIGH,
         ),
     ]
 }
@@ -231,6 +270,8 @@ def make_finding(
         line=line,
         detail=redact(detail) or detail,
         recommendation=meta.recommendation,
+        finding_type=meta.finding_type,
+        confidence=meta.confidence,
         evidence=redact(evidence),
         cwe=meta.cwe,
         owasp=meta.owasp,

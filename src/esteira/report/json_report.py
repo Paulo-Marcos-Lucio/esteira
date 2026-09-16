@@ -25,6 +25,12 @@ def finding_to_dict(finding: Finding) -> dict[str, Any]:
         "title": finding.title,
         "severity": finding.severity.value,
         "severity_rank": finding.severity.rank,
+        # `type`/`confidence`: superfície do workflow e confiança de exploração — ver
+        # `FindingType`/`Confidence` em `core/models.py`. Herdados da checagem que disparou;
+        # todo achado real do JSON os traz (ver test_report.py::test_json_structure e o
+        # meta-teste test_catalogo.py::test_toda_checagem_declara_type_e_confidence).
+        "type": finding.finding_type.value,
+        "confidence": finding.confidence.value,
         "path": finding.path,
         "line": finding.line,
         "detail": finding.detail,
