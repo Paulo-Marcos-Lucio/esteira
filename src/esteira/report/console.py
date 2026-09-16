@@ -40,7 +40,9 @@ def txt(value: object) -> Text:
     return Text(str(value))
 
 
-def render(result: ScanResult, console: Console | None = None) -> None:
+def render(
+    result: ScanResult, console: Console | None = None, *, show_suppressed: bool = False
+) -> None:
     console = console or Console()
     if not result.findings:
         if result.cobertura_parcial:
@@ -56,6 +58,7 @@ def render(result: ScanResult, console: Console | None = None) -> None:
                 f"[bold green]✓ Nenhum problema encontrado[/] "
                 f"[dim]({result.files_scanned} workflow(s)).[/]"
             )
+        _rodape_suprimidos(result, console, show_suppressed)
         return
 
     findings = result.sorted()
@@ -84,6 +87,35 @@ def render(result: ScanResult, console: Console | None = None) -> None:
     # catálogo (o que ficou de fora) estava limpo — a lista de achados continua parcial.
     if result.cobertura_parcial:
         console.print(_linha_cobertura(result))
+    _rodape_suprimidos(result, console, show_suppressed)
+
+
+def _rodape_suprimidos(result: ScanResult, console: Console, show_suppressed: bool) -> None:
+    """Rodapé dos achados calados por diretiva inline. Sempre imprime a contagem — supressão
+    silenciosa demais (sem NENHUM rastro na saída padrão) é o defeito que este item fecha; o
+    `--show-suppressed` só decide se a LISTA completa (achado, local, justificativa) aparece."""
+    if not result.suppressed:
+        return
+    console.print(
+        f"[dim]{len(result.suppressed)} achado(s) suprimido(s) por diretiva inline "
+        "(rode com --show-suppressed para listar).[/]"
+    )
+    if not show_suppressed:
+        return
+    table = Table(title="Achados suprimidos", show_lines=False, expand=True, header_style="bold")
+    table.add_column("Sev", no_wrap=True)
+    table.add_column("Checagem", no_wrap=True)
+    table.add_column("Local", overflow="fold")
+    table.add_column("Justificativa", overflow="fold")
+    for suppressed in result.suppressed_sorted():
+        finding = suppressed.finding
+        table.add_row(
+            Text(_LABEL[finding.severity], style=_STYLE[finding.severity]),
+            txt(finding.check_id),
+            txt(f"{finding.path}:{finding.line}"),
+            txt(suppressed.justification),
+        )
+    console.print(table)
 
 
 def _linha_cobertura(result: ScanResult) -> str:
