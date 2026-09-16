@@ -8,7 +8,7 @@ from typing import Any
 
 from esteira import __version__
 from esteira.checks.catalog import CATALOG, OWASP_EDITION
-from esteira.core import provenance
+from esteira.core import provenance, redaction
 from esteira.core.models import Finding, ScanResult, Severity
 
 _LEVEL: dict[Severity, str] = {
@@ -86,12 +86,16 @@ def _fingerprint(finding: Finding, ordinal: int) -> str:
 
 
 def _result(finding: Finding, ordinal: int) -> dict[str, Any]:
-    message = f"{finding.detail} {finding.recommendation}"
+    # O SARIF é PUBLICADO (sobe pro Code Scanning): toda evidência mascarada que sai daqui passa
+    # por `para_publicacao` e encurta para KEEP_PUBLICADO=2 por ponta — o console/JSON de triagem
+    # ficam em 4+4, o que sobe fica em 2+2. `para_publicacao` só encurta tokens `…`; texto sem
+    # credencial (o pin de uma action, uma recomendação do catálogo) passa intacto.
+    message = redaction.para_publicacao(f"{finding.detail} {finding.recommendation}") or ""
     if finding.fix_suggestion is not None:
-        message += f" {finding.fix_suggestion}"
+        message += f" {redaction.para_publicacao(finding.fix_suggestion) or ''}"
     region: dict[str, Any] = {"startLine": max(finding.line, 1)}
     if finding.evidence:
-        region["snippet"] = {"text": finding.evidence}
+        region["snippet"] = {"text": redaction.para_publicacao(finding.evidence)}
     return {
         "ruleId": finding.check_id,
         "level": _LEVEL[finding.severity],
@@ -124,29 +128,37 @@ def to_sarif(result: ScanResult) -> str:
     # quem consome o arquivo inteiro (a aba Security, um agregador) precisava abrir uma regra
     # qualquer para descobrir sob qual edição os rótulos `A03` foram escritos — e não tinha
     # como descobrir contra qual commit o run foi produzido.
+    commit = provenance.commit(result.root)
     propriedades: dict[str, Any] = {
         "owasp_edition": OWASP_EDITION,
-        "commit": provenance.commit(result.root),
+        # `commit` NÃO mora mais aqui: foi para `versionControlProvenance.revisionId` abaixo — o
+        # slot padrão que o GitHub Code Scanning de fato lê (em `properties` ele era ignorado).
+        # Fica só o discriminador do que o SHA significa: o commit do repositório AUDITADO.
+        "commit_scope": provenance.COMMIT_SCOPE,
         "ruleset_hash": provenance.ruleset_hash(),
         "artifact_sha256": None,
     }
+    run: dict[str, Any] = {
+        "tool": {
+            "driver": {
+                "name": "esteira",
+                "informationUri": "https://github.com/Paulo-Marcos-Lucio/esteira",
+                "version": __version__,
+                "rules": _rules(),
+            }
+        },
+        "results": _results(result),
+        "properties": propriedades,
+    }
+    # Proveniência de controle de versão no slot canônico do SARIF 2.1.0. O Code Scanning lê
+    # `revisionId` daqui; fora de um repositório git (`commit is None`) o bloco é omitido — a
+    # resposta honesta é a AUSÊNCIA do carimbo, não um `revisionId: null` que parece informação.
+    if commit is not None:
+        run["versionControlProvenance"] = [{"revisionId": commit}]
     document: dict[str, Any] = {
         "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
         "version": "2.1.0",
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "name": "esteira",
-                        "informationUri": "https://github.com/Paulo-Marcos-Lucio/esteira",
-                        "version": __version__,
-                        "rules": _rules(),
-                    }
-                },
-                "results": _results(result),
-                "properties": propriedades,
-            }
-        ],
+        "runs": [run],
     }
     # Sobre o `run` já montado e com o campo ainda em `null` — mesma receita do JSON, aplicada
     # ao objeto onde o campo de fato mora.
