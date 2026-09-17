@@ -39,6 +39,7 @@ def finding_to_dict(finding: Finding) -> dict[str, Any]:
 def suppressed_finding_to_dict(suppressed: SuppressedFinding) -> dict[str, Any]:
     document = finding_to_dict(suppressed.finding)
     document["justification"] = suppressed.justification
+    document["origem"] = suppressed.origem
     return document
 
 

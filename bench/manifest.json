@@ -107,9 +107,9 @@
  {
   "arquivo": "positivos/secret-to-thirdparty.yml",
   "linha": 11,
-  "eh_achado": true,
+  "eh_achado": false,
   "regra": "unpinned-action-thirdparty",
-  "nota": "co-ocorrencia legitima: a action de terceiro esta mesmo por tag — e e o que torna o segredo perigoso"
+  "nota": "ES-02b: subsumido por secret-to-thirdparty-action (mesma linha/alvo) — vai para suprimidos com origem='subsuncao', nao para achados visiveis. A pinagem por tag continua coberta pelo achado mais especifico (linha 13); reportar as duas separadamente era o mesmo defeito contado duas vezes. Cobertura da regra unpinned-action-thirdparty em isolamento fica com positivos/unpinned-thirdparty.yml."
  },
  {
   "arquivo": "positivos/unpinned-container.yml",
