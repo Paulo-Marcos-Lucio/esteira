@@ -49,15 +49,21 @@ class Finding:
 
 @dataclass(frozen=True)
 class SuppressedFinding:
-    """Um achado que uma checagem gerou mas que foi calado por diretiva inline na linha.
+    """Um achado que uma checagem gerou mas que não conta contra a varredura.
 
     Guarda o achado original (para reportar severidade/local como sempre) mais a
-    `justification`: a diretiva honrada, verbatim, para quem lê o relatório saber POR QUE
-    o achado não conta contra a varredura sem precisar abrir o workflow de novo.
+    `justification`: o motivo, verbatim quando aplicável, para quem lê o relatório saber POR
+    QUE o achado não conta sem precisar abrir o workflow de novo.
     """
 
     finding: Finding
     justification: str
+    # De onde veio a supressão: "inline" (diretiva '# esteira: ignore'/'# zizmor: ignore' na
+    # própria linha) ou "subsuncao" (achado redundante calado porque outro, mais específico,
+    # já cobre o mesmo alvo — ver `_SUBSUME` em `detectors.py`). O padrão é "inline" porque é
+    # a origem histórica, de antes deste campo existir; uma origem nova (ex.: exceção de
+    # config) se soma ao vocabulário sem exigir mudança de quem já lê este campo.
+    origem: str = "inline"
 
 
 @dataclass

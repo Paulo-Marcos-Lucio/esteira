@@ -250,7 +250,8 @@ def run_all_partitioned(wf: Workflow) -> tuple[list[Finding], list[SuppressedFin
     out += check_insecure_commands(wf)
     out += check_curl_pipe(wf)
     out += check_unpinned(wf)
-    out += check_secret_to_thirdparty(wf)
+    achados_segredo, alvos_subsumidos = check_secret_to_thirdparty(wf)
+    out += achados_segredo
     out += check_secrets_inherit(wf)
     out += check_unpinned_images(wf)
     out += check_checkout_credentials(wf)
@@ -264,18 +265,64 @@ def run_all_partitioned(wf: Workflow) -> tuple[list[Finding], list[SuppressedFin
     out += check_ai_rule_of_two(wf)
     out += check_cache_poisoning(wf)
     out += check_falsifiable_actor(wf)
-    return _partition(wf, out)
+    return _partition(wf, out, alvos_subsumidos)
 
 
-def _partition(wf: Workflow, out: list[Finding]) -> tuple[list[Finding], list[SuppressedFinding]]:
+# Achado à ESQUERDA subsome o da DIREITA quando os dois caem no mesmo (path, linha do 'uses:',
+# 'action@ref'): o da esquerda é estritamente mais informativo (aponta o segredo, não só a
+# pinagem), então listar os dois é o MESMO defeito contado duas vezes. Ver
+# `check_secret_to_thirdparty` — é quem monta a chave de comparação.
+_SUBSUME: dict[str, str] = {
+    "secret-to-thirdparty-action": "unpinned-action-thirdparty",
+}
+_SUBSUMIDOS = frozenset(_SUBSUME.values())
+_SUBSUMIDO_POR = {subsumido: subsumidor for subsumidor, subsumido in _SUBSUME.items()}
+
+
+def _partition(
+    wf: Workflow,
+    out: list[Finding],
+    alvos_subsumidos: dict[int, tuple[str, int, str]] | None = None,
+) -> tuple[list[Finding], list[SuppressedFinding]]:
+    alvos_subsumidos = alvos_subsumidos or {}
     visiveis: list[Finding] = []
     suprimidos: list[SuppressedFinding] = []
+    alvos_ativos: set[tuple[str, int, str | None]] = set()
+    candidatos_subsumidos: list[Finding] = []
     for finding in out:
         motivo = _suppression_reason(wf, finding)
-        if motivo is None:
+        if motivo is not None:
+            suprimidos.append(
+                SuppressedFinding(finding=finding, justification=motivo, origem="inline")
+            )
+            continue
+        # Registra o alvo só de achado que SOBREVIVEU à supressão inline: um achado subsumidor
+        # calado manualmente (ex.: '# esteira: ignore[secret-to-thirdparty-action]') não pode
+        # arrastar junto o subsumido — senão os dois somem e o problema de pinagem, que ninguém
+        # pediu para ignorar, fica sem nenhum rastro no relatório.
+        chave = alvos_subsumidos.get(id(finding))
+        if chave is not None:
+            alvos_ativos.add(chave)
+        if finding.check_id in _SUBSUMIDOS:
+            candidatos_subsumidos.append(finding)
+            continue
+        visiveis.append(finding)
+    for finding in candidatos_subsumidos:
+        chave_subsumido = (finding.path, finding.line, finding.evidence)
+        if chave_subsumido not in alvos_ativos:
             visiveis.append(finding)
-        else:
-            suprimidos.append(SuppressedFinding(finding=finding, justification=motivo))
+            continue
+        subsumidor = _SUBSUMIDO_POR[finding.check_id]
+        suprimidos.append(
+            SuppressedFinding(
+                finding=finding,
+                justification=(
+                    f"subsumido por '{subsumidor}' na mesma linha/alvo "
+                    f"({finding.evidence}) — achado mais específico já cobre o caso."
+                ),
+                origem="subsuncao",
+            )
+        )
     return visiveis, suprimidos
 
 
@@ -1487,22 +1534,33 @@ def _first_secret_binding(mapping: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
-def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
+def check_secret_to_thirdparty(
+    wf: Workflow,
+) -> tuple[list[Finding], dict[int, tuple[str, int, str]]]:
     """Segredo/GITHUB_TOKEN passado via with: a uma action de TERCEIROS não fixada por SHA.
 
     Reusa o classificador de owner/pinagem (`_action_ref` + `_FIRST_PARTY` + `_SHA`): action
     oficial (actions/*, github/*) recebendo o token é uso normal (github-script, checkout), e
     uma de terceiros fixada por SHA teve o código congelado/revisado — nenhuma alarma. O risco
     real é a de terceiros por tag/branch: a tag pode ser movida para código que exfiltra o
-    segredo. Complementa 'unpinned-action-thirdparty' (que ignora se há segredo em jogo).
+    segredo. Complementa 'unpinned-action-thirdparty' (que ignora se há segredo em jogo) — e é
+    sempre um SUPERCONJUNTO dela: todo step aqui também passa pelo filtro de owner/pinagem que
+    gera 'unpinned-action-thirdparty', então as duas disparam juntas na mesma 'uses:'.
 
     O segredo chega à action por DOIS caminhos: ``with:`` (parâmetro da action) e o ``env:``
     EFETIVO do step (workflow + job + step) — que a action lê em ``process.env``. O padrão
     canônico do ``gitleaks-action`` entrega o ``GITHUB_TOKEN`` por ``env:``, não ``with:``; olhar
     só o ``with:`` deixava esse caso passar. Varre os dois, com ``with:`` primeiro para preservar
     a âncora/redação quando o segredo está lá.
+
+    Devolve, junto dos achados, um mapa ``id(achado) -> (path, linha do 'uses:', 'action@ref')``
+    — o "alvo" que ``_partition`` usa para aplicar ``_SUBSUME``: como a dupla sempre dispara
+    junta (parágrafo acima), reportar as duas separadamente é o MESMO defeito contado duas vezes;
+    a chave deixa ``_partition`` calar o achado mais genérico ('unpinned-action-thirdparty') só
+    quando o mais específico continuar de pé (não também suprimido por outro motivo).
     """
     out: list[Finding] = []
+    alvos: dict[int, tuple[str, int, str]] = {}
     cursor = 1
     for step, env_map in _step_contexts(wf.data):
         parsed = _action_ref(step.get("uses"))
@@ -1524,19 +1582,19 @@ def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
             anchor = wf.find_line(f"{action}@{ref}", start=cursor)
             cursor = anchor + 1
             line = wf.find_line(secret, default=anchor, start=anchor)
-            out.append(
-                make_finding(
-                    "secret-to-thirdparty-action",
-                    wf.path,
-                    line,
-                    f"segredo ({secret}) passado via {source}.{key} para a action de terceiros "
-                    f"'{action}' fixada por '{ref}' (não é SHA).",
-                    evidence=secret,
-                )
+            finding = make_finding(
+                "secret-to-thirdparty-action",
+                wf.path,
+                line,
+                f"segredo ({secret}) passado via {source}.{key} para a action de terceiros "
+                f"'{action}' fixada por '{ref}' (não é SHA).",
+                evidence=secret,
             )
+            out.append(finding)
+            alvos[id(finding)] = (wf.path, anchor, f"{action}@{ref}")
             break  # um achado por step basta (with: tem prioridade sobre env:)
     out += _reusable_secret_to_thirdparty(wf, cursor)
-    return out
+    return out, alvos
 
 
 def _reusable_secret_to_thirdparty(wf: Workflow, cursor: int) -> list[Finding]:
