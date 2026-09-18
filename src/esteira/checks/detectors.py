@@ -1747,13 +1747,17 @@ def check_checkout_credentials(wf: Workflow) -> list[Finding]:
                 and exposed_at is not None
                 and _publishes_workspace(with_)
             ):
+                # Ancora no step de upload (onde `evidence=uses` de fato aparece), não no
+                # checkout: um achado cuja `line` cita um texto que só existe algumas linhas
+                # abaixo quebra a leitura "a evidência está na linha citada" (ES-02c).
+                at = wf.find_line(uses, start=exposed_at)
                 out.append(
                     make_finding(
                         "checkout-credentials-in-artifact",
                         wf.path,
-                        exposed_at,
-                        "checkout sem 'persist-credentials: false' e, depois dele, um "
-                        f"'{uses}' que publica a raiz do workspace (path="
+                        at,
+                        f"checkout (linha {exposed_at}) sem 'persist-credentials: false' e, "
+                        f"depois dele, um '{uses}' que publica a raiz do workspace (path="
                         f"{with_.get('path', '<ausente>')!r}): o .git/config com a credencial "
                         "vai dentro do artefato.",
                         evidence=uses,
