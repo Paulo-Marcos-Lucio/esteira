@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from collections.abc import Iterable
+from datetime import date
 from pathlib import Path
 
 from esteira.checks.catalog import CATALOG, make_finding
 from esteira.checks.detectors import run_all
+from esteira.core.exceptions import Excecao, carregar_excecoes
 from esteira.core.loader import iter_workflow_files, load
-from esteira.core.models import Finding, ScanResult
+from esteira.core.models import Finding, ScanResult, Suprimido
 
 
 def _display_path(path: Path, base: Path) -> str:
@@ -48,6 +51,35 @@ def _scan_file(path: Path, base: Path) -> list[Finding]:
         ]
 
 
+def _achado_expirado(finding: Finding, excecao: Excecao) -> Finding:
+    aviso = f"supressão expirada em {excecao.expira}"
+    return dataclasses.replace(finding, detail=f"{finding.detail} ({aviso}).")
+
+
+def _aplicar_excecoes(
+    findings: list[Finding], excecoes: list[Excecao], hoje: date
+) -> tuple[list[Finding], list[Suprimido]]:
+    """Separa `findings` em (visíveis, suprimidos) contra as exceções de config.
+
+    Primeira exceção que CASA decide: vencida, o achado fica visível e ganha a nota de
+    validade expirada; vigente, o achado sai para `suprimidos` com origem/motivo — nunca é
+    deletado. Sem exceção casando, o achado segue como estava.
+    """
+    visiveis: list[Finding] = []
+    suprimidos: list[Suprimido] = []
+    for finding in findings:
+        excecao_casada = next((e for e in excecoes if e.casa(finding.check_id, finding.path)), None)
+        if excecao_casada is None:
+            visiveis.append(finding)
+        elif excecao_casada.expirada(hoje):
+            visiveis.append(_achado_expirado(finding, excecao_casada))
+        else:
+            suprimidos.append(
+                Suprimido(finding=finding, origem="config", motivo=excecao_casada.motivo)
+            )
+    return visiveis, suprimidos
+
+
 def scan(
     root: Path | str,
     *,
@@ -69,6 +101,9 @@ def scan(
                 continue
             findings.append(finding)
 
+    excecoes = carregar_excecoes(base)
+    findings, suprimidos = _aplicar_excecoes(findings, excecoes, date.today())
+
     # Cobertura: o conjunto ATIVO de checagens é o catálogo depois de aplicar --only/--skip
     # (o mesmo recorte que filtrou os achados acima). O que ficou de fora é omissão do
     # operador — declarada aqui para que o console, o JSON e o portão do CI possam dizer que
@@ -79,6 +114,7 @@ def scan(
     omitidas = tuple(sorted(catalogo - ativo))
     return ScanResult(
         findings=findings,
+        suppressed=suprimidos,
         files_scanned=len(files),
         root=str(base),
         checagens_omitidas=omitidas,
