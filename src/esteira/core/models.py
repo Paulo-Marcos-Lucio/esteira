@@ -45,6 +45,11 @@ class Finding:
     # script-injection). Complementa a 'recommendation' genérica do catálogo; None quando
     # a checagem não gera uma sugestão acionável por achado.
     fix_suggestion: str | None = None
+    # Proveniência do achado dentro do relatório (não confundir com a proveniência de
+    # commit/ruleset de core/provenance.py): "scan" é o valor de todo achado novo; "baseline"
+    # marca o que já era conhecido numa gravação anterior (ver core/baseline.py) e por isso não
+    # deve reabrir o portão do CI, mesmo continuando visível no relatório.
+    origem: str = "scan"
 
 
 @dataclass
@@ -103,9 +108,13 @@ class ScanResult:
         return self.checagens_total - len(self.checagens_omitidas)
 
     def max_severity(self) -> Severity | None:
-        if not self.findings:
+        # Achado de baseline (origem="baseline") já era conhecido numa gravação anterior: ele
+        # continua na lista e no relatório, mas não pode reabrir o portão do CI — senão gravar
+        # uma baseline não suprimiria nada, só duplicaria o achado com um rótulo a mais.
+        ativos = [f for f in self.findings if f.origem != "baseline"]
+        if not ativos:
             return None
-        return max((f.severity for f in self.findings), key=lambda s: s.rank)
+        return max((f.severity for f in ativos), key=lambda s: s.rank)
 
     def sorted(self) -> list[Finding]:
         return sorted(self.findings, key=lambda f: (-f.severity.rank, f.path, f.line))
