@@ -233,6 +233,7 @@ def run_all(wf: Workflow) -> list[Finding]:
     out += check_script_injection(wf)
     out += check_secret_in_run(wf)
     out += check_insecure_commands(wf)
+    out += check_github_env_injection(wf)
     out += check_curl_pipe(wf)
     out += check_unpinned(wf)
     out += check_secret_to_thirdparty(wf)
@@ -357,6 +358,60 @@ def check_insecure_commands(wf: Workflow) -> list[Finding]:
             evidence="ACTIONS_ALLOW_UNSECURE_COMMANDS",
         )
     ]
+
+
+def check_github_env_injection(wf: Workflow) -> list[Finding]:
+    """Escrita em `$GITHUB_ENV` cujo valor carrega contexto não-confiável, sob `pull_request_target`.
+
+    `$GITHUB_ENV` não é uma variável — é um ARQUIVO que o runner relê como `nome=valor` por
+    linha, um por step seguinte. Citar a variável entre aspas ("$VAR") evita o `script-injection`
+    (a string do shell não quebra), mas não protege ESTE sink: se o valor carrega uma quebra de
+    linha, o atacante deixa de só controlar o VALOR e passa a poder declarar uma variável NOVA,
+    com o nome que quiser, visível a todos os steps seguintes — inclusive actions de terceiros,
+    que leem o `process.env` inteiro. Sob `pull_request_target` esse job roda com segredos e
+    token de escrita, daí a severidade Crítica; a checagem só olha esse gatilho porque é onde o
+    mesmo padrão troca "vazamento de escopo largo" por "escalada de privilégio".
+
+    Reaproveita a mesma leitura de `$GITHUB_ENV`/`$GITHUB_OUTPUT` do `insecure-commands`
+    (`_github_file_assignments`) e o mesmo cálculo de taint por indireção via `env:` do
+    `script-injection` (`_tainted_env_vars`/`_value_carries_taint`) — o valor É não-confiável
+    tanto quando vem direto (`${{ github.event.pull_request.title }}`) quanto quando passa por
+    uma variável de ambiente que foi atribuída a partir dele.
+    """
+    data = wf.data
+    if "pull_request_target" not in trigger_names(data or {}):
+        return []
+    out: list[Finding] = []
+    cursor = 1
+    workflow_env = _env_of(data)
+    for job in _jobs(data):
+        job_env = {**workflow_env, **_env_of(job)}
+        for step in _steps_of(job):
+            run = step.get("run")
+            if not isinstance(run, str):
+                continue
+            env_map = {**job_env, **_env_of(step)}
+            tainted_vars = _tainted_env_vars(env_map)
+            for line in run.splitlines():
+                for which, name, value in _github_file_assignments(line):
+                    if which != "ENV" or not _value_carries_taint(value, tainted_vars, env_map):
+                        continue
+                    stripped = line.strip()
+                    at = wf.find_line(stripped[:60], start=cursor) if stripped else cursor
+                    cursor = at + 1
+                    out.append(
+                        make_finding(
+                            "github-env-injection",
+                            wf.path,
+                            at,
+                            f"Escrita em $GITHUB_ENV com valor não-confiável (variável "
+                            f"'{name}') sob pull_request_target: uma quebra de linha no texto "
+                            "do atacante injeta uma variável de ambiente extra, com nome "
+                            "escolhido por ele, visível a todos os steps seguintes do job.",
+                            evidence=evidencia(stripped),
+                        )
+                    )
+    return out
 
 
 def _step_contexts(data: dict[str, Any] | None) -> list[tuple[dict[str, Any], dict[str, Any]]]:
