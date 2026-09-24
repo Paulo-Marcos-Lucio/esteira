@@ -243,12 +243,17 @@ def run_all(wf: Workflow) -> list[Finding]:
     # criaria ciclo — resolvido na hora da chamada, com detectors já inicializado).
     from esteira.checks.ai_workflow import check_ai_rule_of_two
     from esteira.checks.compromised_actions import check_compromised_actions
-    from esteira.checks.hardening_extra import check_cache_poisoning, check_falsifiable_actor
+    from esteira.checks.hardening_extra import (
+        check_cache_poisoning,
+        check_falsifiable_actor,
+        check_unsound_condition,
+    )
 
     out += check_compromised_actions(wf)
     out += check_ai_rule_of_two(wf)
     out += check_cache_poisoning(wf)
     out += check_falsifiable_actor(wf)
+    out += check_unsound_condition(wf)
     return [f for f in out if not _is_suppressed(wf, f)]
 
 

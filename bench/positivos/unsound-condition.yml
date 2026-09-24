@@ -1,0 +1,9 @@
+name: unsound-condition
+on: push
+permissions: {}
+jobs:
+  deploy:
+    if: true
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo oi
