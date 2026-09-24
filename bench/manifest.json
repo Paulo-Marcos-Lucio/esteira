@@ -229,5 +229,12 @@
   "eh_achado": true,
   "regra": "falsifiable-actor-condition",
   "nota": "porta de seguranca por github.actor == dependabot[bot] (falsificavel)"
+ },
+ {
+  "arquivo": "positivos/unsound-condition.yml",
+  "linha": 6,
+  "eh_achado": true,
+  "regra": "unsound-condition",
+  "nota": "if: true no job: nenhum gate de verdade, roda em todo run"
  }
 ]
