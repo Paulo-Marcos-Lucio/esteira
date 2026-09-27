@@ -243,13 +243,32 @@ def run_all(wf: Workflow) -> list[Finding]:
     # criaria ciclo — resolvido na hora da chamada, com detectors já inicializado).
     from esteira.checks.ai_workflow import check_ai_rule_of_two
     from esteira.checks.compromised_actions import check_compromised_actions
+    from esteira.checks.ferramenta_de_seguranca import check_security_tool_unpinned
     from esteira.checks.hardening_extra import check_cache_poisoning, check_falsifiable_actor
 
     out += check_compromised_actions(wf)
     out += check_ai_rule_of_two(wf)
     out += check_cache_poisoning(wf)
     out += check_falsifiable_actor(wf)
-    return [f for f in out if not _is_suppressed(wf, f)]
+    out += check_security_tool_unpinned(wf)
+    return [f for f in _subsume_unpinned_generic(out) if not _is_suppressed(wf, f)]
+
+
+def _subsume_unpinned_generic(findings: list[Finding]) -> list[Finding]:
+    """`security-tool-unpinned` SUBSOME (substitui, não soma) o 'unpinned-action-*' genérico da
+    MESMA linha — mesma causa raiz (pin por tag/branch), então reportar os dois duplicaria um
+    único defeito como se fossem dois. A remoção é por (path, line): a linha de um 'uses:' tem
+    no máximo um achado de cada família, então o par identifica o mesmo step sem ambiguidade."""
+    linhas_de_ferramenta = {
+        (f.path, f.line) for f in findings if f.check_id == "security-tool-unpinned"
+    }
+    return [
+        f
+        for f in findings
+        if not (
+            f.check_id.startswith("unpinned-action-") and (f.path, f.line) in linhas_de_ferramenta
+        )
+    ]
 
 
 def _is_suppressed(wf: Workflow, finding: Finding) -> bool:

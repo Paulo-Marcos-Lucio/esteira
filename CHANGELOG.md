@@ -7,6 +7,16 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **`security-tool-unpinned` (catálogo 22 → 23, 🟠 Alta, A03:2025/CWE-1357)** —
+  `checks/ferramenta_de_seguranca.py`: `uses:` cuja raiz `owner/action` está na lista curada
+  `ACOES_DE_SEGURANCA` (gitleaks, trufflehog, semgrep, CodeQL, Trivy, Scorecard,
+  harden-runner, Snyk, dependency-review, pip-audit…) e cujo `ref` não é SHA. Risco maior que o
+  de uma action genérica no mesmo estado de pin: a ferramenta já roda com acesso ao
+  código-fonte completo (SAST/secret-scanning) ou grava achado com um token de
+  `security-events: write` — sequestrar a tag rende execução de código dentro da própria
+  varredura de segurança. **Subsome** (troca, não soma) o `unpinned-action-firstparty`/
+  `unpinned-action-thirdparty` genérico da MESMA linha em `detectors.run_all`, para não
+  duplicar uma única causa raiz como se fosse dois defeitos.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de
