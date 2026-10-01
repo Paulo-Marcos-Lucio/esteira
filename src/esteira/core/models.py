@@ -74,6 +74,17 @@ class Workflow:
         return default
 
 
+@dataclass(frozen=True)
+class SupressaoNaoMapeada:
+    """Uma diretiva `# zizmor: ignore[regra]` cuja `regra` não está no mapa
+    `_ZIZMOR_PARA_ESTEIRA` (detectors.py) — não suprimiu achado nenhum, fail-closed, e o
+    operador precisa saber que a linha "revisada" não está de fato calando nada."""
+
+    path: str
+    line: int
+    regra_zizmor: str
+
+
 @dataclass
 class ScanResult:
     findings: list[Finding] = field(default_factory=list)
@@ -90,6 +101,11 @@ class ScanResult:
     # fora. Uma varredura parcial não certifica ausência de problema (ver `cobertura_parcial`).
     checagens_omitidas: tuple[str, ...] = ()
     checagens_total: int = 0
+    # Diretivas `# zizmor: ignore[regra]` cuja regra não está mapeada para nenhum check_id
+    # nosso — não suprimiram nada, mas parecem ter suprimido para quem só olha o diff (ver
+    # `SupressaoNaoMapeada`). Declarado à parte de `checagens_omitidas` porque é sobre uma
+    # LINHA do workflow varrido, não sobre uma checagem do catálogo que o operador desligou.
+    supressoes_nao_mapeadas: tuple[SupressaoNaoMapeada, ...] = ()
 
     @property
     def cobertura_parcial(self) -> bool:
