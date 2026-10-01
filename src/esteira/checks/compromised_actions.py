@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from esteira.checks.catalog import CATALOG, CheckMeta, make_finding
 from esteira.checks.detectors import _action_ref, _jobs, _steps_of
-from esteira.core.models import Finding, Severity, Workflow
+from esteira.core.models import Confidence, Finding, FindingType, Severity, Workflow
 
 #: Data do snapshot curado à mão. A ausência de match fora desta data NÃO é prova de segurança.
 SNAPSHOT_DATA = "2026-09-11"
@@ -74,6 +74,8 @@ CATALOG_ENTRIES: list[CheckMeta] = [
         "pós-incidente AGORA, e rotacione todos os segredos que este workflow pôde expor.",
         cwe="CWE-506",
         owasp="A03:2025 Software Supply Chain Failures",
+        finding_type=FindingType.SUPPLY_CHAIN,
+        confidence=Confidence.HIGH,
     ),
 ]
 

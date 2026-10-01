@@ -29,6 +29,44 @@ _RANK: dict[Severity, int] = {
 }
 
 
+class FindingType(str, Enum):
+    """Em qual SUPERFÍCIE do workflow o achado vive — independente da severidade e do
+    rótulo OWASP, que classificam o IMPACTO, não o ponto de origem.
+
+    Existe para quem consome o `-f json` (dashboard, triagem) agrupar achados por área
+    de correção sem reabrir o detector de cada checagem: `SCRIPT` se corrige editando o
+    `run:`, `SUPPLY_CHAIN` trocando um `uses:`, e assim por diante — a lista de checagens
+    de cada valor está fixada em `checks/catalog.py::CATALOG` (ver
+    `tests/test_catalogo.py::test_toda_checagem_declara_type_e_confidence`).
+    """
+
+    TRIGGER = "trigger"  # como/quando o workflow dispara e que contexto de privilégio herda
+    PERMISSIONS = "permissions"  # escopo do GITHUB_TOKEN ou do cofre de segredos concedido
+    SUPPLY_CHAIN = "supply_chain"  # fixação (ou falta dela) de action/imagem/reusable externo
+    SCRIPT = "script"  # código executado dentro de um step (`run:`)
+    SECRET_HANDLING = "secret_handling"  # caminho de exposição de credencial já presente
+    STRUCTURE = "structure"  # o próprio arquivo de workflow, antes de qualquer análise semântica
+
+
+class Confidence(str, Enum):
+    """Confiança de que o FATO capturado é risco explorável — não uma medida de acerto da
+    extração, que aqui é sempre determinística (parse de YAML + regex sobre o texto do
+    `run:`, sem heurística estatística). O que varia por checagem é se o fato, quando
+    encontrado, já é problema em qualquer repositório, ou só dependendo de como o
+    repositório é operado, ou é puramente uma recomendação de boa prática.
+
+    - HIGH: o padrão encontrado é explorável em qualquer contexto de implantação.
+    - MEDIUM: risco real, mas cuja gravidade prática depende do repositório (público vs.
+      privado, quem pode abrir PR, o que o job de fato faz) — a checagem não tem como saber.
+    - LOW: acionável como boa prática/reprodutibilidade, não como exploração direta; o
+      próprio catálogo descreve o achado como informativo.
+    """
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 @dataclass(frozen=True)
 class Finding:
     check_id: str
@@ -38,6 +76,13 @@ class Finding:
     line: int
     detail: str
     recommendation: str
+    #: Superfície do workflow e confiança de exploração — ver `FindingType` e `Confidence`.
+    #: Herdados do `CheckMeta` da checagem que disparou (via `catalog.make_finding`); toda
+    #: entrada de `CATALOG` declara os dois (ver
+    #: `tests/test_catalogo.py::test_toda_checagem_declara_type_e_confidence`). Sem default:
+    #: uma checagem nova sem os dois quebra a IMPORTAÇÃO do módulo, antes de qualquer teste.
+    finding_type: FindingType
+    confidence: Confidence
     evidence: str | None = None
     cwe: str | None = None
     owasp: str | None = None
