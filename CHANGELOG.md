@@ -25,6 +25,17 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
     version-bump que reapontasse um SHA pinado para um commit existente só num fork de
     `actions/checkout`. Alternativa gratuita para essa verificação específica: o `clank`
     (`chainguard-dev/clank`, open source).
+  - Terceira entrada: `cache-poisoning-by-eviction-unverified` — `cache-poisoning` só casa um par
+    estrutural visível no YAML (escrita em contexto não-confiável + restauração da MESMA chave em
+    contexto confiável); não cobre envenenamento por EVICÇÃO FORÇADA, em que a cota de cache do
+    repositório (10 GB) é enchida de propósito para o LRU do GitHub expulsar a entrada legítima,
+    liberando a chave para uma escrita maliciosa sem par escrita/restauração visível no
+    repositório vítima. Técnica real do compromisso do `angular/dev-infra` (dez/2025, bounty de
+    US$ 31.337 pago pelo Google): a ferramenta `Cacheract` enchia a cota, um workflow agendado
+    restaurava a entrada envenenada e expunha um token administrativo. Alternativa gratuita: a
+    auditoria `cache-poisoning` do zizmor, que cobre esse caso por outro caminho (aponta qualquer
+    cache-aware action usada num workflow de release/publicação, com ou sem par visível) —
+    `uvx zizmor .`.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de

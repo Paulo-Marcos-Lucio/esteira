@@ -46,6 +46,26 @@ KNOWN_GAPS: tuple[dict[str, str], ...] = (
             "exatamente a classe de checagem que esta ferramenta mantém deliberadamente offline."
         ),
     },
+    {
+        "id": "cache-poisoning-by-eviction-unverified",
+        "detail": (
+            "'cache-poisoning' só casa um PAR estrutural visível no YAML: uma ESCRITA em "
+            "contexto não-confiável e uma RESTAURAÇÃO da MESMA chave em contexto confiável. Não "
+            "cobre o envenenamento por EVICÇÃO FORÇADA: encher a cota de cache do repositório "
+            "(10 GB) com entradas descartáveis para o LRU do GitHub expulsar a entrada legítima, "
+            "e então escrever uma entrada maliciosa sob a mesma chave, agora livre — sem um par "
+            "escrita/restauração simétrico visível nos workflows escaneados. É a técnica real do "
+            "compromisso do angular/dev-infra (dezembro/2025, bounty de US$ 31.337 pago pelo "
+            "Google): a ferramenta 'Cacheract' encheu a cota para expulsar a entrada legítima, a "
+            "entrada envenenada foi restaurada pelo workflow agendado 'ng-renovate', expondo um "
+            "token de escrita administrativa. Confirmar esse padrão exige modelar a COTA e o LRU "
+            "do cache, não só o grafo estático de write/restore — fora do escopo estrutural desta "
+            "checagem. Alternativa gratuita: a auditoria 'cache-poisoning' do zizmor cobre esse "
+            "caso por um caminho diferente (qualquer action com cache habilitado num workflow que "
+            "ele classifica como de release/publicação é apontada, com ou sem par visível): "
+            "'uvx zizmor .'."
+        ),
+    },
 )
 
 
