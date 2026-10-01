@@ -74,9 +74,27 @@ class Workflow:
         return default
 
 
+@dataclass(frozen=True)
+class Suprimido:
+    """Um achado que uma exceção de config tirou de `findings` — sem deletar.
+
+    A supressão inline (`# esteira: ignore`) some sem deixar rastro (é do autor do workflow,
+    na própria linha). Esta é da CONFIG do repositório: alguém decidiu, fora do arquivo
+    auditado, que este achado não conta — e essa decisão precisa ficar visível e datada, não
+    apagar o achado como se ele nunca tivesse existido.
+    """
+
+    finding: Finding
+    origem: str  # "config" — único valor hoje; existe para diferenciar de futuras origens
+    motivo: str
+
+
 @dataclass
 class ScanResult:
     findings: list[Finding] = field(default_factory=list)
+    # Achados suprimidos por exceção de config (ver `core.exceptions`): visíveis à parte,
+    # nunca deletados. Uma exceção VENCIDA não entra aqui — o achado permanece em `findings`.
+    suppressed: list[Suprimido] = field(default_factory=list)
     files_scanned: int = 0
     # Raiz varrida, carregada até o relatório porque a proveniência (`commit`) tem de
     # identificar o CÓDIGO AUDITADO, não o diretório de onde a ferramenta foi invocada:
