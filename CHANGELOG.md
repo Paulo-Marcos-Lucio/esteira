@@ -14,6 +14,17 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
   `omitted_by_operator` (checagem existente excluída por `--only`/`--skip` NESTA varredura),
   `known_gaps` é constante por versão da ferramenta: não varia com o repositório nem com o recorte,
   e continua presente mesmo numa varredura completa e sem achados.
+  - Segunda entrada: `sha-pin-fork-origin-unverified` — `unpinned-action-thirdparty`/
+    `unpinned-action-firstparty` confirmam só o FORMATO da referência (SHA completo vs. tag/branch
+    mutável), nunca que o commit pinado pertence de fato ao histórico do `owner/repo` declarado e
+    não a um fork dele ("imposter commit" — o GitHub resolve `uses: owner/repo@sha` contra o grafo
+    de objetos Git compartilhado entre repositório e forks). Confirmar a origem genuína exige
+    consulta de rede à API do GitHub, fora do escopo offline desta ferramenta; a pesquisa pública
+    de Adnan Khan sobre o compromisso do `angular/dev-infra` (dez/2025, bounty de US$ 31.337 pago
+    pelo Google) documenta essa classe: a melhor via de impacto discutida era uma PR de
+    version-bump que reapontasse um SHA pinado para um commit existente só num fork de
+    `actions/checkout`. Alternativa gratuita para essa verificação específica: o `clank`
+    (`chainguard-dev/clank`, open source).
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de

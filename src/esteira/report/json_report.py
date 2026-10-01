@@ -33,6 +33,19 @@ KNOWN_GAPS: tuple[dict[str, str], ...] = (
             "passa sem alerta."
         ),
     },
+    {
+        "id": "sha-pin-fork-origin-unverified",
+        "detail": (
+            "'unpinned-action-thirdparty'/'unpinned-action-firstparty' confirmam o FORMATO da "
+            "referência (SHA completo de 40 caracteres vs. tag/branch mutável) — não que aquele "
+            "SHA pertença de fato ao histórico do 'owner/repo' declarado, e não a um fork dele. "
+            "GitHub resolve 'uses: owner/repo@sha' contra o grafo de objetos Git compartilhado "
+            "entre um repositório e seus forks: se o commit existe em QUALQUER fork alcançável, "
+            "ele resolve, mesmo sem nunca ter sido mesclado no repositório nomeado ('imposter "
+            "commit'). Confirmar a origem genuína exige consulta de rede à API do GitHub — "
+            "exatamente a classe de checagem que esta ferramenta mantém deliberadamente offline."
+        ),
+    },
 )
 
 
