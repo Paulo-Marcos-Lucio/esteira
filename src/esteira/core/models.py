@@ -29,6 +29,55 @@ _RANK: dict[Severity, int] = {
 }
 
 
+class Confianca(str, Enum):
+    """Confiança de que o achado é um verdadeiro-positivo (não a severidade do risco).
+
+    Distinta de ``Severity``: uma checagem pode ser CRITICAL em severidade e ainda ter
+    confiança BAIXA (achado indireto, sujeito a falso-positivo) — os dois eixos são
+    ortogonais, por isso vivem em campos separados no ``Finding``.
+    """
+
+    ALTA = "alta"
+    MEDIA = "media"
+    BAIXA = "baixa"
+
+    @property
+    def rank(self) -> int:
+        return _CONFIANCA_RANK[self]
+
+
+_CONFIANCA_RANK: dict[Confianca, int] = {
+    Confianca.BAIXA: 0,
+    Confianca.MEDIA: 1,
+    Confianca.ALTA: 2,
+}
+
+
+class Persona(str, Enum):
+    """Para quem o achado é relevante — controla o que aparece por padrão vs. sob pedido.
+
+    Ordem crescente de rigor: ``REGULAR`` é o que todo repositório quer ver; ``PEDANTIC``
+    soma achados de estilo/robustez que nem todo time prioriza; ``AUDITOR`` soma o que só
+    interessa a uma varredura exaustiva (a garantia de monotonicidade — auditor ⊇ pedantic
+    ⊇ regular — é o que a suíte de invariantes de ES-05e trava).
+    """
+
+    REGULAR = "regular"
+    PEDANTIC = "pedantic"
+    AUDITOR = "auditor"
+
+    @property
+    def rank(self) -> int:
+        return _PERSONA_RANK[self]
+
+
+_PERSONA_RANK: dict[Persona, int] = {
+    Persona.REGULAR: 0,
+    Persona.PEDANTIC: 1,
+    Persona.AUDITOR: 2,
+}
+
+
 @dataclass(frozen=True)
 class Finding:
     check_id: str
@@ -45,6 +94,11 @@ class Finding:
     # script-injection). Complementa a 'recommendation' genérica do catálogo; None quando
     # a checagem não gera uma sugestão acionável por achado.
     fix_suggestion: str | None = None
+    # Confiança e persona: defaults do catálogo (ver CheckMeta), com override por achado
+    # pelo mesmo mecanismo que 'severity' já usa em make_finding — um caso concreto pode
+    # ser mais/menos confiável que a média da checagem que o gerou.
+    confidence: Confianca = Confianca.ALTA
+    persona: Persona = Persona.REGULAR
 
 
 @dataclass
