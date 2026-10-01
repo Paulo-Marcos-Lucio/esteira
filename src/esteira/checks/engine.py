@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
+from dataclasses import replace
 from pathlib import Path
 
 from esteira.checks.catalog import CATALOG, make_finding
 from esteira.checks.detectors import run_all
-from esteira.core.loader import iter_workflow_files, load
+from esteira.core.loader import iter_workflow_files, load, trigger_names
 from esteira.core.models import Finding, ScanResult
+from esteira.core.reach import alcance_de_triggers
 
 
 def _display_path(path: Path, base: Path) -> str:
@@ -36,7 +38,8 @@ def _scan_file(path: Path, base: Path) -> list[Finding]:
     try:
         workflow = load(path)
         workflow.path = display
-        return run_all(workflow)
+        alcance = alcance_de_triggers(trigger_names(workflow.data or {}))
+        return [replace(finding, reach=alcance) for finding in run_all(workflow)]
     except Exception as exc:
         return [
             make_finding(
