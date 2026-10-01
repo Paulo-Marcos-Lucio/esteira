@@ -17,7 +17,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![454 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -93,7 +93,7 @@ In the same audit, `unpinned-container-image` now anchors the finding on the **s
 
 ## 🔬 What was measured
 
-Numbers from this run — all **reproducible with `pytest` in this repository** (443 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
+Numbers from this run — all **reproducible with `pytest` in this repository** (454 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
 
 > **Honest comparison against zizmor** (the domain's mature incumbent): the suite's reproducible benchmark lives at [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — pinned versions and commits — and it states where Esteira finds less than zizmor. Where Esteira wins is precision on a clean repository and calibration; **we don't sell coverage superiority**.
 
@@ -176,6 +176,10 @@ esteira scan .github/workflows/deploy.yml
 esteira scan . --only script-injection --only broad-permissions
 esteira scan . --skip unpinned-action-firstparty
 
+# records today's findings as a baseline, then audits ignoring them in the gate
+esteira baseline gravar . -o .esteira-baseline.json
+esteira scan . --baseline .esteira-baseline.json
+
 # lists the checks
 esteira rules
 ```
@@ -189,6 +193,20 @@ esteira rules
 | `--fail-on` | `high` | `critical` loosens the gate; `low`/`medium` tightens it. `none` never fails (report only) |
 | `--only` | *(all)* | focuses a triage on one or more checks (id from the `esteira rules` column); unknown id → exit 2. Makes the scan **partial** — see *Coverage* |
 | `--skip` | *(none)* | silences a check that's noisy in your context without turning off the rest. Also makes the scan **partial** |
+| `--baseline` | *(none)* | a finding whose fingerprint was already recorded by `esteira baseline gravar` comes out with `origin=baseline` and doesn't count toward `--fail-on`. A missing or invalid file → exit 2 (fail-closed: it never silently runs "without a baseline") |
+
+### Baseline (known legacy findings)
+
+A repository running Esteira for the first time may carry old findings nobody is fixing today.
+`esteira baseline gravar` snapshots the current findings by the same stable fingerprint the SARIF
+report uses (no line number — reindenting the workflow doesn't reopen the finding); `esteira scan
+--baseline` marks whatever was in that snapshot with `origin=baseline` in the report, without
+hiding it, and without letting it fail `--fail-on`:
+
+```bash
+esteira baseline gravar . -o .esteira-baseline.json
+esteira scan . --baseline .esteira-baseline.json   # only fails on a NEW finding
+```
 
 ### Inline suppression (per line)
 
@@ -306,7 +324,7 @@ src/esteira/
 
 ## 🔬 Engineering quality & method
 
-**Gates, measured right now in this repo:** 443 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (19 files) · `ruff` lint + format clean (58 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
+**Gates, measured right now in this repo:** 454 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (20 files) · `ruff` lint + format clean (60 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
 
 **A test that fails the façade, not the appearance.** Severity is what decides whether the client's CI fails; that's why it's pinned in an independent dict and compared against the catalog in `test_severidade_de_toda_checagem_esta_fixada` — downgrading `script-injection` from Critical to Low (which would open the gate) fails the suite before merge. A companion meta-test requires that **every** new check be born with a positive case that actually fires; and the ReDoS test **times itself**: the fixed form of `curl | bash` runs in < 0.5 s where the broken one took 7.1 s, with a sibling test guaranteeing that "got fast" didn't turn into "stopped detecting."
 

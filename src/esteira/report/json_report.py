@@ -33,6 +33,7 @@ def finding_to_dict(finding: Finding) -> dict[str, Any]:
         "owasp": finding.owasp,
         "recommendation": finding.recommendation,
         "fix_suggestion": finding.fix_suggestion,
+        "origin": finding.origem,
     }
 
 
