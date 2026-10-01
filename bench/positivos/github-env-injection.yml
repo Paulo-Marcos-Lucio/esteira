@@ -1,0 +1,11 @@
+name: github-env-injection
+on: pull_request_target
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - run: echo "SUBJECT=$TITLE" >> "$GITHUB_ENV"

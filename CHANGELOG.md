@@ -7,6 +7,14 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **`github-env-injection` (catálogo 22 → 23, 🔴 Crítica, A05:2025/CWE-74)** — valor não-confiável
+  gravado em `$GITHUB_ENV` sob `pull_request_target`, direto (`${{ github.event.pull_request.title
+  }}`) ou por indireção via `env:` (`echo "X=$TITLE" >> $GITHUB_ENV`, o padrão que já evita
+  `script-injection` mas não protege este sink). `$GITHUB_ENV` é um ARQUIVO relido linha a linha —
+  uma quebra de linha no valor do atacante declara uma variável de ambiente nova, com nome também
+  escolhido por ele, visível a todos os steps seguintes de um job que roda com segredos e token de
+  escrita. Reaproveita a leitura de `$GITHUB_ENV`/`$GITHUB_OUTPUT` já usada por `insecure-commands`
+  e o cálculo de taint por indireção do `script-injection`.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de

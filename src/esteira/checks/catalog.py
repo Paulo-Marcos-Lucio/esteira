@@ -95,6 +95,20 @@ CATALOG: dict[str, CheckMeta] = {
             "CWE-94",
         ),
         CheckMeta(
+            "github-env-injection",
+            "Escrita não-sanitizada em $GITHUB_ENV sob pull_request_target",
+            Severity.CRITICAL,
+            "Não grave contexto não-confiável (github.event.*, head_ref) em $GITHUB_ENV, nem por "
+            'indireção via variável de ambiente citada entre aspas (\'echo "X=$VAR" >> '
+            "$GITHUB_ENV'). O valor vira o CONTEÚDO do arquivo que o runner relê linha a linha — "
+            "uma quebra de linha no texto do atacante injeta uma variável de ambiente inteira, "
+            "com nome também escolhido por ele, visível a todos os steps seguintes do job "
+            "privilegiado. Grave por um heredoc de delimitador aleatório, nunca por "
+            "concatenação direta.",
+            "A05:2025 Injection",
+            "CWE-74",
+        ),
+        CheckMeta(
             "curl-pipe-shell",
             "Download e execução direta (curl|bash)",
             Severity.MEDIUM,
