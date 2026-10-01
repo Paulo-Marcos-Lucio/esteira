@@ -1,6 +1,6 @@
 """CAP C — endurecimento estático adicional (offline).
 
-Dois detectores que trabalham só sobre a árvore YAML já carregada (nunca tocam a rede), na
+Três detectores que trabalham só sobre a árvore YAML já carregada (nunca tocam a rede), na
 mesma doutrina do resto da suíte — detecção estática, "inconclusivo não é ausência":
 
 * ``cache-poisoning`` — par escrita↔restauração da MESMA chave de cache entre jobs/steps. Uma
@@ -15,17 +15,25 @@ mesma doutrina do resto da suíte — detecção estática, "inconclusivo não �
   robusta do autor do PR (muda em re-runs e em ``workflow_run``): apoiar auto-merge/deploy nele
   é confiar num input falsificável como se fosse controle de acesso.
 
+* ``unsound-condition`` — ``if:`` de job/step PROVADAMENTE sempre-verdadeiro, então o "gate" que
+  o autor pretendia não existe: o passo roda em TODO run, gate nenhum. Dois casos, deliberadamente
+  estreitos para não arriscar falso-positivo: o literal booleano ``true`` (nativo do YAML ou da
+  sintaxe de expressão do GitHub Actions) e a autocomparação ``X == X`` (mesmo texto nos dois
+  lados de um `==` de nível superior) — verdadeira por reflexividade, qualquer que seja o valor
+  real de X em tempo de execução. Não tentamos provar tautologia geral (SAT arbitrário): esses
+  dois casos são os únicos que dá para provar sem avaliar o contexto do run.
+
 Posicionamento honesto (2026): não competimos em motor ATIVO nem em contagem de regras. O ganho
 aqui é confirmação READ-ONLY/offline, baixo-FP com discriminadores explícitos (chave estável vs.
 chave por-run; assimetria de contexto; ``==`` que CONCEDE confiança ao bot, não o ``!=`` que o
-exclui) e remediação em PT-BR.
+exclui; tautologia PROVADA, não suspeitada) e remediação em PT-BR.
 
 Este módulo é DISJUNTO do resto: expõe ``CATALOG_ENTRIES`` e se auto-registra no ``CATALOG`` no
-fim do arquivo; expõe ``check_cache_poisoning`` / ``check_falsifiable_actor`` para o integrador
-plugar em ``run_all``. Os imports de helpers de ``detectors`` são LAZY (dentro das funções) de
-propósito: ``detectors`` importará este módulo para chamar as checagens, então um import de topo
-para ``detectors`` fecharia um ciclo — no momento em que ``run_all`` chama estas funções,
-``detectors`` já está totalmente carregado.
+fim do arquivo; expõe ``check_cache_poisoning`` / ``check_falsifiable_actor`` /
+``check_unsound_condition`` para o integrador plugar em ``run_all``. Os imports de helpers de
+``detectors`` são LAZY (dentro das funções) de propósito: ``detectors`` importará este módulo
+para chamar as checagens, então um import de topo para ``detectors`` fecharia um ciclo — no
+momento em que ``run_all`` chama estas funções, ``detectors`` já está totalmente carregado.
 """
 
 from __future__ import annotations
@@ -64,6 +72,17 @@ CATALOG_ENTRIES: list[CheckMeta] = [
         "'github.event.pull_request.user.login'. Detecção estática/offline.",
         "A01:2025 Broken Access Control",
         "CWE-807",
+    ),
+    CheckMeta(
+        "unsound-condition",
+        "if: provadamente sempre-verdadeiro (gate inexistente)",
+        Severity.MEDIUM,
+        "O 'if:' nunca impede a execução — ou é o literal 'true', ou compara a mesma expressão "
+        "consigo mesma ('X == X'), o que é verdadeiro por reflexividade independente do valor "
+        "real de X. Se o job/step deve mesmo rodar sempre, remova o 'if:' (mais claro que um "
+        "valor tautológico); se havia uma restrição pretendida, corrija a comparação.",
+        "A01:2025 Broken Access Control",
+        "CWE-670",
     ),
 ]
 
@@ -466,6 +485,87 @@ def check_falsifiable_actor(wf: Workflow) -> list[Finding]:
         cursor = _emit_actor(wf, out, job.get("if"), f"job '{jname}'", cursor)
         for step in _iter_steps(job):
             cursor = _emit_actor(wf, out, step.get("if"), f"step de '{jname}'", cursor)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# (3) unsound-condition
+# --------------------------------------------------------------------------- #
+
+
+def _strip_expr_wrapper(text: str) -> str:
+    """Remove um único `${{ … }}` envolvendo o texto INTEIRO, se houver."""
+    m = re.fullmatch(r"\$\{\{\s*(.*?)\s*\}\}", text.strip(), re.DOTALL)
+    return m.group(1).strip() if m is not None else text.strip()
+
+
+def _if_tautology(if_value: Any) -> str | None:
+    """Se `if_value` é PROVADAMENTE sempre-verdadeiro — independente do contexto do run —,
+    devolve a evidência textual; senão `None`.
+
+    Só dois casos contam, de propósito (ver docstring do módulo): o literal `true` e a
+    autocomparação `X == X`. Qualquer outra coisa (inclusive `X == Y` com X/Y diferentes, ou
+    `A || true` — que TAMBÉM é sempre-verdadeiro, mas exigiria resolver precedência geral de
+    `&&`/`||` para provar) fica de fora: sem prova estrutural, o achado não nasce.
+    """
+    if if_value is True:  # YAML nativo: `if: true` (sem aspas) já chega como bool
+        return "true"
+    if not isinstance(if_value, str):
+        return None
+    from esteira.checks.detectors import _mascara_aninhado, _normalize_brackets, _split_top_level
+
+    inner = _strip_expr_wrapper(if_value)
+    if not inner:
+        return None
+    if inner.lower() == "true":
+        return "true"
+    norm = _normalize_brackets(inner)
+    partes = _split_top_level(norm, "==")
+    if len(partes) != 2:
+        return None
+    left, right = (p.strip() for p in partes)
+    if not left or left.lower() != right.lower():
+        return None
+    # Nenhum dos lados pode esconder um `&&`/`||` de nível superior: comparação tem PRECEDÊNCIA
+    # MAIOR que `&&`/`||` no GitHub Actions, então `a && b == a && b` é `a && (b == a) && b`, não
+    # `(a && b) == (a && b)` — o split ingênuo em `==` cortaria errado, e o texto igual dos dois
+    # lados aqui NÃO prova tautologia nenhuma. `_mascara_aninhado` só apaga aspas/parênteses, e
+    # `&&`/`||` de nível superior sobrevivem nela — é exatamente o que buscamos para rejeitar.
+    if any("&&" in m or "||" in m for m in (_mascara_aninhado(left), _mascara_aninhado(right))):
+        return None
+    return f"{left} == {right}"
+
+
+def _emit_unsound(wf: Workflow, out: list[Finding], if_value: Any, scope: str, cursor: int) -> int:
+    tautologia = _if_tautology(if_value)
+    if tautologia is None:
+        return cursor
+    ancora = if_value.strip() if isinstance(if_value, str) and if_value.strip() else "true"
+    at = wf.find_line(ancora[:60], default=cursor, start=cursor)
+    out.append(
+        make_finding(
+            "unsound-condition",
+            wf.path,
+            at,
+            f"Condição de {scope} é provadamente sempre-verdadeira ('{tautologia}'): roda em "
+            "TODO run, independente de qualquer restrição que o autor pretendia — o 'if:' não "
+            "é um gate, é decoração.",
+            evidence=tautologia,
+        )
+    )
+    return at + 1
+
+
+def check_unsound_condition(wf: Workflow) -> list[Finding]:
+    """Achado para `if:` de job ou step comprovadamente sempre-verdadeiro."""
+    if not isinstance(wf.data, dict):
+        return []
+    out: list[Finding] = []
+    cursor = 1
+    for jname, job in _iter_jobs(wf.data):
+        cursor = _emit_unsound(wf, out, job.get("if"), f"job '{jname}'", cursor)
+        for step in _iter_steps(job):
+            cursor = _emit_unsound(wf, out, step.get("if"), f"step de '{jname}'", cursor)
     return out
 
 
