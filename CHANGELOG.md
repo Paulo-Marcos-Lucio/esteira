@@ -36,6 +36,23 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
     auditoria `cache-poisoning` do zizmor, que cobre esse caso por outro caminho (aponta qualquer
     cache-aware action usada num workflow de release/publicação, com ou sem par visível) —
     `uvx zizmor .`.
+  - Quarta entrada: `oidc-trust-policy-out-of-repo` — um workflow com `permissions: id-token:
+    write` mais `aws-actions/configure-aws-credentials`/`google-github-actions/auth`/
+    `azure/login` só mostra a INTENÇÃO de pedir um token de federação de identidade (OIDC); quem
+    de fato decide se esse token vira credencial é a trust policy configurada do lado do
+    provedor de nuvem (o `sub`/`aud` da IAM role na AWS, a condição de atributo do Workload
+    Identity Pool no GCP, o federated credential no Entra ID) — configuração que mora fora do
+    Git, fora do alcance de uma ferramenta que só lê `.github/**`. Diferente dos três anteriores
+    (onde o dado existe no repositório mas a verificação exige rede ou modelagem adicional),
+    aqui o insumo simplesmente **não está** no repositório — nenhuma consulta offline ou futura
+    fecharia essa lacuna a partir do YAML sozinho.
+- **Invariante property-based do parser total** (`tests/test_parser_total_2026_10_02.py`): para
+  qualquer JSON arbitrário (subconjunto válido de YAML), `core.loader.load()` nunca levanta
+  exceção e classifica de forma determinística em exatamente três baldes — objeto no topo
+  parseia como workflow; `null` no topo é documento vazio legítimo (mesma classe de um arquivo
+  em branco); qualquer outro JSON no topo (lista, string, número, booleano) é "não auditável"
+  (`parse_error` preenchido). Generaliza por Hypothesis os exemplos manuais de
+  `tests/test_robustez_2026_07_30.py` (uma lista, um escalar) para a CLASSE inteira de entrada.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de
