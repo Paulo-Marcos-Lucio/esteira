@@ -66,6 +66,26 @@ KNOWN_GAPS: tuple[dict[str, str], ...] = (
             "'uvx zizmor .'."
         ),
     },
+    {
+        "id": "oidc-trust-policy-out-of-repo",
+        "detail": (
+            "A trust policy OIDC — quem pode trocar o token de federação de identidade "
+            "(OpenID Connect) do GitHub Actions por uma credencial de nuvem — não é avaliada: "
+            "ela não existe em lugar nenhum do repositório. Um workflow com "
+            "'permissions: id-token: write' mais um 'uses: aws-actions/configure-aws-"
+            "credentials'/'google-github-actions/auth'/'azure/login' só mostra a INTENÇÃO de "
+            "pedir o token; quem de fato decide se aquele token é aceito é a condição "
+            "configurada do lado do provedor — o 'sub'/'aud' da IAM role na AWS, a condição de "
+            "atributo do Workload Identity Pool no GCP, o federated credential no Entra ID. "
+            "Essa configuração mora na nuvem, fora do Git e fora do alcance de uma ferramenta "
+            "que só lê '.github/**'. Uma trust policy mal restrita (sem 'ref:'/'environment:', "
+            "aceitando qualquer branch ou 'repo:*') deixa qualquer workflow do repositório "
+            "assumir a credencial — nenhuma checagem desta ferramenta pode confirmar ou refutar "
+            "isso a partir do YAML. Confirmar exige inspecionar a configuração do provedor "
+            "(ex.: 'aws iam get-role --role-name X' e ler o 'AssumeRolePolicyDocument'), fora "
+            "do escopo desta ferramenta."
+        ),
+    },
 )
 
 
