@@ -176,6 +176,9 @@ esteira scan .github/workflows/deploy.yml
 esteira scan . --only script-injection --only broad-permissions
 esteira scan . --skip unpinned-action-firstparty
 
+# audita só o que o PR tocou em .github/ (diff local contra a base do PR)
+esteira scan . --desde origin/main
+
 # lista as checagens
 esteira rules
 ```
@@ -184,6 +187,7 @@ esteira rules
 
 | Flag | Default | Quando mudar |
 | --- | --- | --- |
+| `--desde` | *(desativado)* | restringe a varredura aos workflows alterados sob `.github/**` entre a referência git dada e o working tree — útil em CI de PR para não reabrir achado em arquivo que ninguém tocou. Referência que o git não resolve, ou `path` fora de um repositório git → exit `2` |
 | `-f, --format` | `console` | `json` para consumir por máquina; `sarif` para a aba Security do GitHub |
 | `-o, --output` | *(stdout)* | grava o relatório num arquivo (obrigatório com nada em `console`; passar `-o` com `--format console` é erro de uso → exit 2) |
 | `--fail-on` | `high` | `critical` afrouxa o portão; `low`/`medium` aperta. `none` nunca falha (só relata) |
