@@ -8,6 +8,7 @@ from pathlib import Path
 
 from esteira.checks.catalog import CATALOG, make_finding
 from esteira.checks.detectors import run_all
+from esteira.core.gitdiff import arquivos_alterados
 from esteira.core.loader import iter_workflow_files, load
 from esteira.core.models import Finding, ScanResult
 
@@ -53,6 +54,7 @@ def scan(
     *,
     only: Iterable[str] | None = None,
     skip: Iterable[str] | None = None,
+    desde: str | None = None,
 ) -> ScanResult:
     only_set = set(only) if only else None
     skip_set = set(skip) if skip else set()
@@ -61,6 +63,12 @@ def scan(
     base = root if root.is_dir() else root.parent
     findings: list[Finding] = []
     files = iter_workflow_files(root)
+    if desde is not None:
+        # Restringe aos arquivos que o diff local tocou sob .github/** — ANTES de escanear,
+        # não depois: um arquivo fora do diff nem chega a gerar Finding, então não há como um
+        # filtro posterior esquecido deixar vazar achado antigo.
+        alterados = arquivos_alterados(root, desde)
+        files = [p for p in files if p.resolve() in alterados]
     for path in files:
         for finding in _scan_file(path, base):
             if only_set is not None and finding.check_id not in only_set:
