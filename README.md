@@ -16,7 +16,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![454 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -92,7 +92,7 @@ Na mesma auditoria, `unpinned-container-image` passou a ancorar o achado na **ch
 
 ## 🔬 O que foi medido
 
-Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (443 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (454 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
 
 > **Comparação honesta contra o zizmor** (o incumbente maduro do domínio): o benchmark reprodutível da suíte está em [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — versões e commits fixados, e diz onde a Esteira encontra menos que o zizmor. Onde a Esteira ganha é precisão em repositório limpo e calibração; **não vendemos superioridade de cobertura**.
 
@@ -154,6 +154,25 @@ pip install .        # ou: pip install -e ".[dev]"
 > automação, de 2021) — o comando `esteira` nem existe naquele pacote. Este projeto não está
 > publicado no PyPI; instale pelo Git, como acima. Em CI, fixe a instalação por SHA
 > (`...esteira.git@<sha-de-40-hex>`) — é a mesma prática que o Esteira exige das suas actions.
+
+### 🪝 Como hook de pre-commit
+
+O repositório publica um [`.pre-commit-hooks.yaml`](.pre-commit-hooks.yaml), então o
+[pre-commit](https://pre-commit.com/) instala e roda o Esteira sem passo manual. Adicione ao
+`.pre-commit-config.yaml` do repositório que você quer auditar:
+
+```yaml
+repos:
+  - repo: https://github.com/Paulo-Marcos-Lucio/esteira
+    rev: <sha-de-40-hex>  # fixe por SHA — o mesmo que o Esteira cobra das actions de terceiro
+    hooks:
+      - id: esteira
+```
+
+O hook só dispara quando o commit toca `.github/workflows/*.yml`/`*.yaml`, roda `esteira scan .`
+sobre o repositório (o default `--fail-on high` vale) e bloqueia o commit se achar alguma coisa
+`high`+. `pre-commit autoupdate` atualiza o `rev`; resolva o SHA mais recente com
+`git ls-remote https://github.com/Paulo-Marcos-Lucio/esteira main` antes de fixar.
 
 ---
 
@@ -306,7 +325,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ## 🔬 Qualidade de engenharia & método
 
-**Portões, medidos agora neste repo:** 443 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+**Portões, medidos agora neste repo:** 454 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
 
 **Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
 

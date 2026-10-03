@@ -1,0 +1,9 @@
+- id: esteira
+  name: esteira
+  description: >-
+    Audita workflows do GitHub Actions contra script injection, actions não fixadas por SHA,
+    pull_request_target perigoso e permissões excessivas.
+  entry: esteira scan
+  language: python
+  files: ^\.github/workflows/.*\.ya?ml$
+  pass_filenames: false
