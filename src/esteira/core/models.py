@@ -7,6 +7,8 @@ from enum import Enum
 from functools import cached_property
 from typing import Any
 
+from esteira.core.reach import Alcance
+
 
 class Severity(str, Enum):
     CRITICAL = "critical"
@@ -45,6 +47,12 @@ class Finding:
     # script-injection). Complementa a 'recommendation' genérica do catálogo; None quando
     # a checagem não gera uma sugestão acionável por achado.
     fix_suggestion: str | None = None
+    # Quem consegue disparar o workflow que gerou o achado — derivado dos gatilhos (`on:`),
+    # não do catálogo: a mesma checagem tem Alcance diferente num repo que só reage a `push`
+    # e num que reage a `pull_request_target`. Default INDETERMINADO porque um achado
+    # construído sem passar por `engine.scan` (ex.: teste unitário de um detector isolado)
+    # não tem workflow completo para derivar o gatilho.
+    reach: Alcance = Alcance.INDETERMINADO
 
 
 @dataclass
