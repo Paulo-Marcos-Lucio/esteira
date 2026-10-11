@@ -229,5 +229,12 @@
   "eh_achado": true,
   "regra": "falsifiable-actor-condition",
   "nota": "porta de seguranca por github.actor == dependabot[bot] (falsificavel)"
+ },
+ {
+  "arquivo": "positivos/security-tool-unpinned.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "security-tool-unpinned",
+  "nota": "gitleaks-action (ferramenta de secret-scanning) fixada por tag movivel - subsome o unpinned-action-thirdparty generico da mesma linha"
  }
 ]
