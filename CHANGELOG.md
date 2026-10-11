@@ -7,6 +7,15 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **`.pre-commit-hooks.yaml`** — o Esteira passa a ser instalável como hook remoto do
+  [pre-commit](https://pre-commit.com/): `repo: https://github.com/Paulo-Marcos-Lucio/esteira`,
+  `hooks: [{id: esteira}]`. O hook dispara só quando o commit toca
+  `.github/workflows/*.yml`/`*.yaml`, roda `esteira scan .` com `pass_filenames: false` (a CLI
+  recebe um diretório, não uma lista de arquivos staged) e bloqueia o commit em achado `high`+.
+  Documentado nos dois READMEs; `tests/test_pre_commit_hook.py` trava o manifesto contra duas
+  classes de apodrecimento — `entry:` desalinhar do console script em `pyproject.toml`, e o
+  filtro `files:` parar de casar workflow — e roda o comando do `entry:` de ponta a ponta contra
+  um repositório sintético vulnerável e um limpo.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de
