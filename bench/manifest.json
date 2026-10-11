@@ -229,5 +229,19 @@
   "eh_achado": true,
   "regra": "falsifiable-actor-condition",
   "nota": "porta de seguranca por github.actor == dependabot[bot] (falsificavel)"
+ },
+ {
+  "arquivo": "positivos/github-env-injection.yml",
+  "linha": 11,
+  "eh_achado": true,
+  "regra": "github-env-injection",
+  "nota": "echo \"SUBJECT=$TITLE\" >> $GITHUB_ENV sob pull_request_target, TITLE vem de env: com o PR title cru (indirecao que evita script-injection mas nao este sink)"
+ },
+ {
+  "arquivo": "positivos/github-env-injection.yml",
+  "linha": 2,
+  "eh_achado": true,
+  "regra": "dangerous-trigger",
+  "nota": "co-ocorrencia legitima: o gatilho privilegiado existe mesmo neste arquivo"
  }
 ]
