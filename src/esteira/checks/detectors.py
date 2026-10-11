@@ -339,7 +339,7 @@ def check_insecure_commands(wf: Workflow) -> list[Finding]:
             which == "ENV"
             and name == "actions_allow_unsecure_commands"
             and str(value).strip().lower() not in _ENV_FALSY
-            for step, _env in _step_contexts(data)
+            for step, _env, _origem in _step_contexts(data)
             if isinstance(step.get("run"), str)
             for line in step["run"].splitlines()
             for which, name, value in _github_file_assignments(line)
@@ -359,21 +359,62 @@ def check_insecure_commands(wf: Workflow) -> list[Finding]:
     ]
 
 
-def _step_contexts(data: dict[str, Any] | None) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """(step, env_map efetivo) para cada step — de jobs OU de uma composite action (runs.steps)."""
-    contexts: list[tuple[dict[str, Any], dict[str, Any]]] = []
+def _env_camadas(
+    camadas: list[tuple[str, dict[str, Any]]],
+) -> tuple[dict[str, Any], dict[str, str]]:
+    """Funde camadas de ``env:`` (ordem: menor para maior precedência) numa tupla
+    ``(merge, origem)``.
+
+    ``origem[chave]`` é o nome da ÚLTIMA camada que definiu ``chave`` — a que vale em
+    runtime. Existe porque, para quem consome o merge, "definido uma vez no workflow/job
+    e herdado por N steps" e "definido só neste step" produzem o mesmo valor mas exigem
+    tratamento diferente (uma declaração vs. N): sem a origem, quem lê só o merge não
+    consegue distinguir os dois casos e acaba tratando toda chave como se fosse local ao
+    step (ver ``check_secret_to_thirdparty``, que agrega achados de camada ampla e mantém
+    achado por step só para o que o próprio step declarou).
+    """
+    merged: dict[str, Any] = {}
+    origem: dict[str, str] = {}
+    for nome, env in camadas:
+        for chave, valor in env.items():
+            merged[chave] = valor
+            origem[chave] = nome
+    return merged, origem
+
+
+def _step_contexts(
+    data: dict[str, Any] | None,
+) -> list[tuple[dict[str, Any], dict[str, Any], dict[str, str]]]:
+    """(step, env_map efetivo, origem) para cada step — de jobs OU de uma composite action
+    (runs.steps).
+
+    ``origem`` (ver ``_env_camadas``) mapeia cada chave do env efetivo à camada que a
+    declarou: ``"workflow"``, ``f"job:{job_id}"`` ou ``"step"``.
+    """
+    contexts: list[tuple[dict[str, Any], dict[str, Any], dict[str, str]]] = []
     if not isinstance(data, dict):
         return contexts
     workflow_env = _env_of(data)
-    for job in _jobs(data):
-        job_env = {**workflow_env, **_env_of(job)}
+    jobs_map = data.get("jobs")
+    jobs_map = jobs_map if isinstance(jobs_map, dict) else {}
+    for job_id, job in jobs_map.items():
+        if not isinstance(job, dict):
+            continue
+        camada_job = f"job:{job_id}"
+        job_env = _env_of(job)
         for step in _steps_of(job):
-            contexts.append((step, {**job_env, **_env_of(step)}))
+            env_map, origem = _env_camadas(
+                [("workflow", workflow_env), (camada_job, job_env), ("step", _env_of(step))]
+            )
+            contexts.append((step, env_map, origem))
     runs = data.get("runs")
     if isinstance(runs, dict) and isinstance(runs.get("steps"), list):
         for step in runs["steps"]:
             if isinstance(step, dict):
-                contexts.append((step, {**workflow_env, **_env_of(step)}))
+                env_map, origem = _env_camadas(
+                    [("workflow", workflow_env), ("step", _env_of(step))]
+                )
+                contexts.append((step, env_map, origem))
     return contexts
 
 
@@ -988,7 +1029,7 @@ def _exec_lines(wf: Workflow) -> Iterator[tuple[str, str, str]]:
     a navegação por steps — e um sink novo passe a valer para todas de uma vez. O ``shell`` é o
     do step (bash|pwsh|python), que decide qual comando imprime no stdout.
     """
-    for step, _env in _step_contexts(wf.data):
+    for step, _env, _origem in _step_contexts(wf.data):
         shell = _step_shell(step)
         for sink, text in _exec_texts(step):
             for line in text.splitlines():
@@ -1245,7 +1286,7 @@ def _secret_heredoc_leaks(wf: Workflow, cursor: int) -> list[Finding]:
     mas `| tee`, `| cat` ou `> /dev/stderr` reemitem ao log e continuam sendo vazamento (`_heredoc_
     vai_ao_log`)."""
     out: list[Finding] = []
-    for step, _env in _step_contexts(wf.data):
+    for step, _env, _origem in _step_contexts(wf.data):
         if _step_shell(step) != "bash":
             continue  # heredoc é idioma POSIX/bash
         run = step.get("run")
@@ -1442,6 +1483,13 @@ def _first_secret_binding(mapping: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
+def _camada_rotulo(camada: str) -> str:
+    if camada == "workflow":
+        return "no `env:` do workflow"
+    job_id = camada.removeprefix("job:")
+    return f"no `env:` do job '{job_id}'"
+
+
 def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
     """Segredo/GITHUB_TOKEN passado via with: a uma action de TERCEIROS não fixada por SHA.
 
@@ -1456,10 +1504,18 @@ def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
     canônico do ``gitleaks-action`` entrega o ``GITHUB_TOKEN`` por ``env:``, não ``with:``; olhar
     só o ``with:`` deixava esse caso passar. Varre os dois, com ``with:`` primeiro para preservar
     a âncora/redação quando o segredo está lá.
+
+    Dois regimes para o caminho ``env:``, decididos pela ``origem`` que ``_step_contexts``
+    devolve para cada chave: se o segredo foi declarado NO PRÓPRIO STEP, o achado continua
+    por step (mesmo texto/âncora de sempre). Se foi declarado no ``env:`` do JOB ou do
+    WORKFLOW, ele é herdado por todo step do escopo — reportar um achado por step duplicava
+    o mesmo alerta N vezes para UMA declaração. Esses casos viram um achado por
+    ``(camada, chave)``, ancorado na linha da declaração, não na do step.
     """
     out: list[Finding] = []
     cursor = 1
-    for step, env_map in _step_contexts(wf.data):
+    agregados: set[tuple[str, str]] = set()
+    for step, env_map, origem in _step_contexts(wf.data):
         parsed = _action_ref(step.get("uses"))
         if parsed is None:
             continue
@@ -1469,6 +1525,8 @@ def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
         owner = action.split("/", 1)[0]
         if owner in _FIRST_PARTY or _SHA.match(ref):
             continue  # oficial, ou terceiro já fixado por SHA: passar o token é aceitável
+        anchor = wf.find_line(f"{action}@{ref}", start=cursor)
+        cursor = anchor + 1
         for source, mapping in (("with", step.get("with")), ("env", env_map)):
             if not isinstance(mapping, dict):
                 continue
@@ -1476,8 +1534,29 @@ def check_secret_to_thirdparty(wf: Workflow) -> list[Finding]:
             if binding is None:
                 continue
             key, secret = binding
-            anchor = wf.find_line(f"{action}@{ref}", start=cursor)
-            cursor = anchor + 1
+            camada = origem.get(key, "step") if source == "env" else "step"
+            if source == "env" and camada != "step":
+                if (camada, key) in agregados:
+                    break  # já emitido para esta (camada, chave): não repete por step
+                agregados.add((camada, key))
+                # Busca "chave: expressão" primeiro (texto normalmente exclusivo da
+                # declaração): reduz o risco de ancorar num OUTRO lugar do arquivo que
+                # repita a mesma expressão de segredo para uma chave diferente.
+                linha = wf.find_line(f"{key}: {secret}", default=0, start=1)
+                if linha == 0:
+                    linha = wf.find_line(secret, default=anchor, start=1)
+                out.append(
+                    make_finding(
+                        "secret-to-thirdparty-action",
+                        wf.path,
+                        linha,
+                        f"segredo ({secret}) declarado via env.{key} {_camada_rotulo(camada)} "
+                        "chega a toda action de terceiros não fixada por SHA que herdar esse "
+                        "escopo (achado agregado por declaração, não repetido por step).",
+                        evidence=secret,
+                    )
+                )
+                break
             line = wf.find_line(secret, default=anchor, start=anchor)
             out.append(
                 make_finding(
@@ -1674,7 +1753,7 @@ def check_unpinned_images(wf: Workflow) -> list[Finding]:
                     evidence=image,
                 )
             )
-    for step, _env in _step_contexts(wf.data):
+    for step, _env, _origem in _step_contexts(wf.data):
         uses = step.get("uses")
         if isinstance(uses, str) and uses.startswith("docker://") and "@sha256:" not in uses:
             line = wf.find_line(uses, start=cursor)

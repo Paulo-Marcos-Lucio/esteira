@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
+
 from esteira.checks.engine import scan
 from esteira.core.models import Severity
 
@@ -228,6 +231,97 @@ def test_secret_in_both_with_and_env_reports_once_with_priority(tmp_path: Path) 
     found = _findings(root)
     assert len(found) == 1
     assert "via with.token" in found[0].detail
+
+
+# --------------------------------------------------------------------------- #
+# secret-to-thirdparty-action — agregação por (camada, chave) do env: de job/workflow
+# (ES-02a: invariantes de CLASSE, property-based)
+# --------------------------------------------------------------------------- #
+
+
+def _write_job_env(tmp_path: Path, n_steps: int) -> Path:
+    """N steps de terceiros não fixados por SHA, todos herdando o MESMO segredo do env: do job."""
+    steps = "".join(f"      - uses: some-org/action-{i}@v1\n" for i in range(n_steps))
+    wf = tmp_path / ".github" / "workflows" / "w.yml"
+    wf.parent.mkdir(parents=True, exist_ok=True)
+    wf.write_text(
+        "on: push\npermissions:\n  contents: read\njobs:\n  b:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    env:\n      TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"
+        "    steps:\n" + steps,
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _write_workflow_env(tmp_path: Path, n_jobs: int, n_steps_per_job: int) -> Path:
+    """N jobs, cada um com M steps de terceiros, todos herdando o MESMO segredo do env: do
+    WORKFLOW (nenhum job/step redeclara a chave)."""
+    jobs = ""
+    for j in range(n_jobs):
+        steps = "".join(
+            f"      - uses: some-org/action-{j}-{i}@v1\n" for i in range(n_steps_per_job)
+        )
+        jobs += f"  j{j}:\n    runs-on: ubuntu-latest\n    steps:\n{steps}"
+    wf = tmp_path / ".github" / "workflows" / "w.yml"
+    wf.parent.mkdir(parents=True, exist_ok=True)
+    wf.write_text(
+        "on: push\npermissions:\n  contents: read\n"
+        "env:\n  TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"
+        "jobs:\n" + jobs,
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+@settings(
+    max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(n_steps=st.integers(min_value=1, max_value=8))
+def test_secret_via_job_env_agrega_um_achado_por_declaracao(n_steps: int, tmp_path: Path) -> None:
+    """Invariante de classe: um segredo declarado UMA VEZ no `env:` do job e herdado por N
+    steps de terceiros não fixados por SHA gera SEMPRE 1 achado só — nunca N achados
+    duplicados para a mesma declaração, qualquer que seja N (ES-02a)."""
+    root = _write_job_env(tmp_path, n_steps)
+    found = _findings(root)
+    assert len(found) == 1
+    assert found[0].line == 8  # ancorado na linha da declaração, não na de nenhum step
+    assert "job 'b'" in found[0].detail
+
+
+@settings(
+    max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(n_jobs=st.integers(min_value=1, max_value=4), n_steps=st.integers(min_value=1, max_value=3))
+def test_secret_via_workflow_env_agrega_entre_jobs(
+    n_jobs: int, n_steps: int, tmp_path: Path
+) -> None:
+    """Mesma invariante na camada do WORKFLOW: uma única declaração em `env:` no topo,
+    herdada por vários jobs e vários steps por job, continua sendo 1 achado — a agregação é
+    por (camada, chave), não por step nem por job (ES-02a)."""
+    root = _write_workflow_env(tmp_path, n_jobs, n_steps)
+    found = _findings(root)
+    assert len(found) == 1
+    assert "workflow" in found[0].detail
+
+
+@settings(
+    max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
+)
+@given(n_steps=st.integers(min_value=1, max_value=5))
+def test_secret_via_step_env_continua_um_achado_por_step(n_steps: int, tmp_path: Path) -> None:
+    """Contraste: quando CADA step declara o segredo no seu PRÓPRIO env: (não herdado de
+    job/workflow), a agregação não se aplica — continuam N achados para N declarações, o
+    regime que já existia. A classe corrigida é só a de declaração ÚNICA herdada (ES-02a)."""
+    steps = "".join(
+        f"      - uses: some-org/action-{i}@v1\n"
+        "        env:\n"
+        "          TOKEN: ${{ secrets.GITHUB_TOKEN }}\n"
+        for i in range(n_steps)
+    )
+    root = _write(tmp_path, steps)
+    found = _findings(root)
+    assert len(found) == n_steps
 
 
 # --------------------------------------------------------------------------- #
