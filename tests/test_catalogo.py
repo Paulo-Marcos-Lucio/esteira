@@ -165,6 +165,17 @@ def test_toda_checagem_tem_recomendacao_e_cwe() -> None:
     assert sem_metadado == {}
 
 
+def test_unpinned_reusable_workflow_cita_a_doc_do_github() -> None:
+    """ES-07c: uma política de organização que exige SHA só para actions NÃO fecha a porta do
+    reusable workflow em si — a documentação do GitHub é explícita sobre essa exceção, e a
+    recommendation precisa carregar a citação literal para quem lê o achado não assumir o
+    contrário."""
+    assert (
+        "Reusable workflows can still be referenced by tag"
+        in CATALOG["unpinned-reusable-workflow"].recommendation
+    )
+
+
 # --------------------------------------------------------------------------- #
 # README: a tabela é a vitrine comercial. Documentar 11 de 16 checagens (e com
 # severidade errada) é subvender o produto e prometer o que ele não entrega.

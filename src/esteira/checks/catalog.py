@@ -137,7 +137,10 @@ CATALOG: dict[str, CheckMeta] = {
             Severity.LOW,
             "Reusable workflow (`org/repo/.github/workflows/x.yml@ref`) fixado por branch/tag. "
             "Fixar por SHA endurece o supply-chain, MAS confira o contexto: dentro da mesma org o "
-            "risco é menor, e algumas infra-CI exigem `@main` (o próprio arquivo pode documentar).",
+            "risco é menor, e algumas infra-CI exigem `@main` (o próprio arquivo pode documentar). "
+            'A documentação do GitHub avisa: "Reusable workflows can still be referenced by tag" — '
+            "uma política de organização que exige SHA só para actions não fecha esta porta; o "
+            "reusable workflow em si também precisa ser fixado por SHA.",
             "A03:2025 Software Supply Chain Failures",
             "CWE-1357",
         ),

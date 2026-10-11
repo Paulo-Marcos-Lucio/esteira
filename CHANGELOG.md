@@ -7,6 +7,17 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **`unpinned-reusable-workflow`: recommendation cita a documentação do GitHub** — uma política de
+  organização que só exige SHA para *actions* não fecha a porta do *reusable workflow* em si; a
+  doc do GitHub é explícita ("Reusable workflows can still be referenced by tag"), e a
+  recommendation agora carrega essa citação literal para quem lê o achado não assumir o
+  contrário.
+- **Corpus dedicado de `cache-poisoning`** (bench/): um positivo modelado na mesma classe
+  estrutural do incidente público **Clinejection** (fev/2026) — cache de dependências
+  compartilhado entre um workflow menos confiável e um release noturno agendado — usando os
+  vetores que a checagem já reconhece (`pull_request`/`schedule`); e três negativos dedicados
+  (chave por-run, chaves distintas, contexto simétrico) que o corpus de `cache-poisoning` não
+  tinha até aqui.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de

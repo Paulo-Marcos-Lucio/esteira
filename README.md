@@ -16,7 +16,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![444 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -92,13 +92,13 @@ Na mesma auditoria, `unpinned-container-image` passou a ancorar o achado na **ch
 
 ## 🔬 O que foi medido
 
-Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (443 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (444 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
 
 > **Comparação honesta contra o zizmor** (o incumbente maduro do domínio): o benchmark reprodutível da suíte está em [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — versões e commits fixados, e diz onde a Esteira encontra menos que o zizmor. Onde a Esteira ganha é precisão em repositório limpo e calibração; **não vendemos superioridade de cobertura**.
 
 - **22 de 22 checagens** disparam na severidade **fixada em teste** contra casos sintéticos, com **zero divergência de severidade**. O meta-teste de catálogo é implacável: checagem nova nasce vermelha até ter caso positivo, severidade declarada, rótulo OWASP da edição e linha nesta tabela — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão do CI) faz a suíte falhar.
 - **Zero falso-positivo** no workflow endurecido que **fixa as actions por SHA** e declara `permissions: contents: read`: ele sai com **nenhum achado**. Pinar por SHA e declarar o mínimo é exatamente o que a ferramenta cobra — quem já faz não recebe ruído.
-- **Corpus rotulado, versionado e público** em [`bench/`](bench/): 23 workflows positivos (**25 achados rotulados**, cobrindo as **22 de 22** regras do catálogo) e 5 negativos com **8 linhas-armadilha**. `python bench/avaliar.py` mede recall e precisão com **intervalo de Wilson** e sai com código 1 se aparecer falso-positivo ou falso-negativo; a mesma bateria roda no `pytest`, então corpus que apodrece quebra o CI. Medido em 2026-09-11: **25/25 recall, IC95% [87% ; 100%], zero falso-positivo**. **O que esse número não é:** os workflows foram escritos por quem escreveu a ferramenta; ele mede cobertura do catálogo contra casos canônicos, não acurácia contra pipelines de produção. Os limites estão listados em `bench/README.md`.
+- **Corpus rotulado, versionado e público** em [`bench/`](bench/): 24 workflows positivos (**26 achados rotulados**, cobrindo as **22 de 22** regras do catálogo) e 6 negativos com **11 linhas-armadilha**. `python bench/avaliar.py` mede recall e precisão com **intervalo de Wilson** e sai com código 1 se aparecer falso-positivo ou falso-negativo; a mesma bateria roda no `pytest`, então corpus que apodrece quebra o CI. Medido em 2026-09-27: **26/26 recall, IC95% [87% ; 100%], zero falso-positivo**. **O que esse número não é:** os workflows foram escritos por quem escreveu a ferramenta; ele mede cobertura do catálogo contra casos canônicos, não acurácia contra pipelines de produção. Os limites estão listados em `bench/README.md`.
 - **Corpus adversarial versionado** em [`tests/fixtures/cetico_ci_2026_09_11.json`](tests/fixtures/cetico_ci_2026_09_11.json): uma caçada cética multiagente atacou os quatro detectores mais novos (Regra de Dois de IA, ação comprometida, cache-poisoning, ator falsificável) e produziu 26 contraexemplos concretos — FP no padrão oficial de mitigação, formas de bypass, red-line. Cada veredito foi adjudicado rodando o scanner real; o corpus roda no `pytest` e trava a regressão de classe (um FP que volta, um FN que reabre).
 - **ReDoS eliminado no próprio portão.** O padrão de `curl | bash` tinha backtracking exponencial: uma linha `run:` de 129 caracteres travava a varredura por **7,1 s**, e cada ~19 caracteres a mais multiplicavam o tempo por ~14 (≈90 s numa linha de ~150 caracteres, rumo ao *timeout* do job — a ferramenta virava o DoS do pipeline que ela audita). Hoje a mesma entrada leva **< 0,01 s** (medido: ~0,00002 s), com um **teste que cronometra** e reprova a regressão.
 
@@ -306,7 +306,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ## 🔬 Qualidade de engenharia & método
 
-**Portões, medidos agora neste repo:** 443 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+**Portões, medidos agora neste repo:** 444 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
 
 **Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
 
