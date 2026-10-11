@@ -388,9 +388,10 @@ def test_actor_bot_gate_formas() -> None:
 
 def test_catalog_entries_registrados() -> None:
     ids = {m.id for m in CATALOG_ENTRIES}
-    assert ids == {"cache-poisoning", "falsifiable-actor-condition"}
+    assert ids == {"cache-poisoning", "falsifiable-actor-condition", "unsound-condition"}
     assert CATALOG["cache-poisoning"].severity is Severity.HIGH
     assert CATALOG["falsifiable-actor-condition"].severity is Severity.MEDIUM
+    assert CATALOG["unsound-condition"].severity is Severity.MEDIUM
     for m in CATALOG_ENTRIES:
         assert m.owasp is not None and m.owasp.startswith(("A01:2025", "A03:2025"))
         assert (m.cwe or "").startswith("CWE-")

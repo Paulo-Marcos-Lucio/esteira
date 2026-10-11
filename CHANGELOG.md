@@ -7,6 +7,17 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **`unsound-condition` (catálogo 22 → 23, 🟡 Média, A01:2025/CWE-670)** — `if:` de job/step
+  PROVADAMENTE sempre-verdadeiro: o literal `true` (YAML nativo ou `${{ true }}`) ou a
+  autocomparação `X == X` (mesmo texto nos dois lados de um `==` de nível superior — verdadeira
+  por reflexividade, qualquer que seja o valor real de X). Nos dois casos o "gate" que o autor
+  pretendia não existe: o passo roda em todo run. Deliberadamente estreito — não tenta provar
+  tautologia geral (`A || true`, `!(A && !A)`), só os dois casos comprováveis sem avaliar o
+  contexto do run, e rejeita `left`/`right` que escondam um `&&`/`||` de nível superior (a
+  comparação tem precedência maior que `&&`/`||` no GitHub Actions; um split ingênuo cortaria
+  errado). `bot-condition` — a outra metade do item que motivou esta regra — já estava coberta
+  desde antes por `falsifiable-actor-condition` (mesmo padrão `github.actor == 'dependabot[bot]'`,
+  sob outro nome); não havia trabalho a fazer ali.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de

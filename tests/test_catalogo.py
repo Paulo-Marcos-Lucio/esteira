@@ -84,6 +84,7 @@ CASOS_POSITIVOS: dict[str, str] = {
     "ai-agent-untrusted-input": "on: issues\npermissions:\n  contents: read\njobs:\n  summarize:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: anthropics/claude-code-action@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          prompt: Resuma a issue\n",
     "cache-poisoning": "on: [pull_request, push]\njobs:\n  seed:\n    if: ${{ github.event_name == 'pull_request' }}\n    runs-on: ubuntu-latest\n    permissions: {}\n    steps:\n      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: build-artifacts-shared\n  release:\n    if: ${{ github.event_name == 'push' }}\n    runs-on: ubuntu-latest\n    permissions: {}\n    steps:\n      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11\n        with:\n          path: dist\n          key: build-artifacts-shared\n      - run: ./deploy.sh\n",
     "falsifiable-actor-condition": "on: push\npermissions: {}\njobs:\n  gate:\n    if: ${{ github.actor == 'dependabot[bot]' }}\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo oi\n",
+    "unsound-condition": "on: push\npermissions: {}\njobs:\n  gate:\n    if: true\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo oi\n",
 }
 
 
@@ -132,6 +133,7 @@ SEVERIDADES: dict[str, Severity] = {
     "ai-agent-untrusted-input": Severity.MEDIUM,
     "cache-poisoning": Severity.HIGH,
     "falsifiable-actor-condition": Severity.MEDIUM,
+    "unsound-condition": Severity.MEDIUM,
 }
 
 
