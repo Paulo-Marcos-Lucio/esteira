@@ -7,9 +7,9 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from esteira.checks.catalog import CATALOG, make_finding
-from esteira.checks.detectors import run_all
+from esteira.checks.detectors import run_all_partitioned
 from esteira.core.loader import iter_workflow_files, load
-from esteira.core.models import Finding, ScanResult
+from esteira.core.models import Finding, ScanResult, SuppressedFinding
 
 
 def _display_path(path: Path, base: Path) -> str:
@@ -30,13 +30,13 @@ def _display_path(path: Path, base: Path) -> str:
     return relative.as_posix()
 
 
-def _scan_file(path: Path, base: Path) -> list[Finding]:
+def _scan_file(path: Path, base: Path) -> tuple[list[Finding], list[SuppressedFinding]]:
     """Analisa um arquivo, jamais deixando uma exceção derrubar a varredura toda."""
     display = _display_path(path, base)
     try:
         workflow = load(path)
         workflow.path = display
-        return run_all(workflow)
+        return run_all_partitioned(workflow)
     except Exception as exc:
         return [
             make_finding(
@@ -45,7 +45,7 @@ def _scan_file(path: Path, base: Path) -> list[Finding]:
                 1,
                 f"Falha inesperada ao analisar o arquivo: {type(exc).__name__}: {exc}",
             )
-        ]
+        ], []
 
 
 def scan(
@@ -60,14 +60,20 @@ def scan(
     root = Path(root)
     base = root if root.is_dir() else root.parent
     findings: list[Finding] = []
+    suppressed: list[SuppressedFinding] = []
     files = iter_workflow_files(root)
+
+    def _incluida(check_id: str) -> bool:
+        if only_set is not None and check_id not in only_set:
+            return False
+        return check_id not in skip_set
+
     for path in files:
-        for finding in _scan_file(path, base):
-            if only_set is not None and finding.check_id not in only_set:
-                continue
-            if finding.check_id in skip_set:
-                continue
-            findings.append(finding)
+        visiveis, suprimidos = _scan_file(path, base)
+        findings += [f for f in visiveis if _incluida(f.check_id)]
+        # Mesmo recorte --only/--skip dos achados abertos: quem pediu para pular uma checagem
+        # não quer vê-la reaparecer disfarçada de "suprimida" no relatório.
+        suppressed += [s for s in suprimidos if _incluida(s.finding.check_id)]
 
     # Cobertura: o conjunto ATIVO de checagens é o catálogo depois de aplicar --only/--skip
     # (o mesmo recorte que filtrou os achados acima). O que ficou de fora é omissão do
@@ -79,6 +85,7 @@ def scan(
     omitidas = tuple(sorted(catalogo - ativo))
     return ScanResult(
         findings=findings,
+        suppressed=suppressed,
         files_scanned=len(files),
         root=str(base),
         checagens_omitidas=omitidas,
