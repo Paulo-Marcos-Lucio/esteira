@@ -16,7 +16,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![444 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -92,7 +92,7 @@ Na mesma auditoria, `unpinned-container-image` passou a ancorar o achado na **ch
 
 ## 🔬 O que foi medido
 
-Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (443 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (444 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
 
 > **Comparação honesta contra o zizmor** (o incumbente maduro do domínio): o benchmark reprodutível da suíte está em [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — versões e commits fixados, e diz onde a Esteira encontra menos que o zizmor. Onde a Esteira ganha é precisão em repositório limpo e calibração; **não vendemos superioridade de cobertura**.
 
@@ -306,7 +306,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ## 🔬 Qualidade de engenharia & método
 
-**Portões, medidos agora neste repo:** 443 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+**Portões, medidos agora neste repo:** 444 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
 
 **Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
 
@@ -316,6 +316,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 - **Fonte única de verdade:** severidade + rótulo OWASP/CWE + recomendação vivem só em `checks/catalog.py` (um `CheckMeta` por checagem); os três renderizadores leem dele, sem duplicar rótulo.
 - **Contrato de saída versionado:** JSON com `schema: suite-appsec/1` e SARIF **2.1.0** (`$schema` do schemastore, catálogo completo como `rules`) para a aba Security. O JSON carrega ainda um bloco `coverage` (`partial`/`ran`/`base_total`/`omitted_by_operator`) para o consumidor de máquina distinguir "limpo" de "não olhado" quando `--only`/`--skip` recortam a varredura.
 - **Relatório vinculável a um código:** o envelope carrega `commit` (o commit do repositório **auditado**: `ESTEIRA_COMMIT` → `git rev-parse HEAD` → `null` fora de repo git; um `commit_scope: "target"` diz que o SHA é do alvo, não da ferramenta), `ruleset_hash` (SHA-256 do catálogo de 22 checagens, com o prefixo auto-descritivo `sha256:`) e `artifact_sha256` (auto-hash do relatório). No JSON os três ficam na raiz; no **SARIF** o `commit` vai para `runs[0].versionControlProvenance[0].revisionId` — o slot padrão que o GitHub Code Scanning lê — e `commit_scope`/`ruleset_hash` em `runs[0].properties`. Sem eles, um achado que desaparece na entrega seguinte é indistinguível de uma regra que foi afrouxada. **Para conferir o `artifact_sha256`:** ponha `null` no campo, serialize com `json.dumps(doc, sort_keys=True, ensure_ascii=False, separators=(",", ":"))` e tire o SHA-256 do UTF-8.
+- **Achado classificado, não só descrito:** todo achado do `-f json` também traz `type` (`trigger`, `permissions`, `supply_chain`, `script`, `secret_handling` ou `structure` — em qual superfície do workflow o achado vive) e `confidence` (`high`, `medium` ou `low` — confiança de que o fato capturado é risco explorável em qualquer contexto, não uma medida de acerto da extração, que é sempre determinística). Os dois são obrigatórios: `CheckMeta.finding_type`/`.confidence` não têm valor padrão, e `tests/test_catalogo.py::test_toda_checagem_declara_type_e_confidence` falha se alguma das 22 checagens não os declarar.
 - **Redação de credencial na evidência:** o `evidence` copia trecho da linha do workflow — e a regra `secret-in-run` existe justamente para achar linha com segredo. Toda credencial de **formato conhecido** (AWS, GitHub PAT, Stripe, Slack, Google, npm, PyPI, GitLab, SendGrid, JWT, bloco PEM) sai mascarada nas pontas, no console, no JSON e no `snippet` do SARIF. A redação vem **antes** do truncamento em 120 caracteres, senão um segredo que começa no caractere 110 sairia com 10 caracteres crus. Não há regra de entropia genérica de propósito: ela mastigaria o SHA de 40 hex do pin de action, que é a evidência principal de `unpinned-action-*`. **Limite assumido:** credencial de formato desconhecido (senha solta, token interno) não é redigida.
 - **Tipos estritos e imutabilidade:** `mypy --strict`, `from __future__ import annotations` em todo módulo, e os modelos de domínio (`Finding`, `CheckMeta`) são `@dataclass(frozen=True)`.
 

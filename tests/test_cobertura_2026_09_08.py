@@ -25,7 +25,7 @@ from typer.testing import CliRunner
 from esteira.checks.catalog import CATALOG
 from esteira.checks.engine import scan
 from esteira.cli import app
-from esteira.core.models import Finding, ScanResult, Severity
+from esteira.core.models import Confidence, Finding, FindingType, ScanResult, Severity
 from esteira.report.console import render
 from esteira.report.json_report import to_document
 
@@ -152,6 +152,8 @@ def test_console_imprime_cobertura_mesmo_com_achados() -> None:
         line=1,
         detail="d",
         recommendation="r",
+        finding_type=FindingType.SCRIPT,
+        confidence=Confidence.HIGH,
     )
     saida = _render(
         ScanResult(
