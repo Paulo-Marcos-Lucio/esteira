@@ -18,6 +18,23 @@ from esteira.core.models import Finding, ScanResult, Severity
 
 SCHEMA = "suite-appsec/1"
 
+# Classes de vulnerabilidade que NENHUMA checagem do catálogo cobre — diferente de
+# `omitted_by_operator` (que é checagem existente que o operador excluiu com `--only`/`--skip`).
+# Até agora essas classes só existiam em prosa na seção "Limitações conhecidas" do README: quem lia
+# o JSON (dashboard/CI) não tinha como saber que um "0 achados" limpo não fala sobre elas. Cada
+# entrada aqui é a mesma classe, com o mesmo texto, também na saída de máquina.
+KNOWN_GAPS: tuple[dict[str, str], ...] = (
+    {
+        "id": "outputs-propagation-untracked",
+        "detail": (
+            "Propagação de taint por 'steps.*.outputs' / 'needs.*.outputs' entre steps não é "
+            "rastreada: se um step captura contexto não-confiável numa saída e outro step depois "
+            "interpola essa saída direto no shell, só a linha de ORIGEM é marcada — o segundo uso "
+            "passa sem alerta."
+        ),
+    },
+)
+
 
 def finding_to_dict(finding: Finding) -> dict[str, Any]:
     return {
@@ -74,14 +91,17 @@ def to_document(result: ScanResult) -> dict[str, Any]:
 
 
 def _coverage_dict(result: ScanResult) -> dict[str, Any]:
-    """Bloco de cobertura da suíte: quantas checagens rodaram, o total do catálogo, e as que
-    o operador deixou de fora. `partial` é a bandeira que o CI lê para não tratar uma
-    varredura recortada e sem achados como aprovação."""
+    """Bloco de cobertura da suíte: quantas checagens rodaram, o total do catálogo, as que
+    o operador deixou de fora, e as classes que o catálogo inteiro não cobre. `partial` é a
+    bandeira que o CI lê para não tratar uma varredura recortada e sem achados como aprovação;
+    `known_gaps` é fixo por versão da ferramenta (não muda por repositório escaneado) e cobre a
+    outra forma de "0 achados" não ser "limpo": nenhuma checagem do catálogo procura por aquilo."""
     return {
         "partial": result.cobertura_parcial,
         "ran": result.checagens_executadas,
         "base_total": result.checagens_total,
         "omitted_by_operator": list(result.checagens_omitidas),
+        "known_gaps": [dict(gap) for gap in KNOWN_GAPS],
     }
 
 

@@ -7,6 +7,13 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **`coverage.known_gaps` no JSON** — as classes que **nenhuma** checagem do catálogo cobre (hoje só
+  em prosa na seção "Limitações conhecidas" do README) passam a sair também na saída de máquina.
+  Primeira entrada: `outputs-propagation-untracked` (propagação de taint por `steps.*.outputs` /
+  `needs.*.outputs` entre steps — só a linha de origem é marcada). Diferente de
+  `omitted_by_operator` (checagem existente excluída por `--only`/`--skip` NESTA varredura),
+  `known_gaps` é constante por versão da ferramenta: não varia com o repositório nem com o recorte,
+  e continua presente mesmo numa varredura completa e sem achados.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de
