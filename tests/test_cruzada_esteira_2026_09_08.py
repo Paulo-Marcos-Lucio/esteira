@@ -36,7 +36,7 @@ def _findings(tmp_path: Path, text: str) -> list[Finding]:
     wf_dir = tmp_path / ".github" / "workflows"
     wf_dir.mkdir(parents=True, exist_ok=True)
     (wf_dir / "w.yml").write_text(text.lstrip("\n"), encoding="utf-8")
-    return scan(tmp_path).findings
+    return scan(tmp_path).visiveis()
 
 
 def _ids(tmp_path: Path, text: str) -> set[str]:

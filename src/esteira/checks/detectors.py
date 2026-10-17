@@ -9,6 +9,7 @@ caímos para um melhor-esforço por linha (``_fallback_checks``).
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Iterator
 from typing import Any
@@ -17,7 +18,7 @@ import yaml
 
 from esteira.checks.catalog import make_finding
 from esteira.core.loader import get_triggers, trigger_names
-from esteira.core.models import Finding, Severity, Workflow
+from esteira.core.models import Finding, Severity, Supressao, Workflow
 from esteira.core.redaction import evidence as evidencia
 
 # Contextos controláveis por terceiros — nunca devem ir direto para o shell.
@@ -207,6 +208,26 @@ _LAST_IDENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*$")
 # `esteira: ignore[regra-a, regra-b]` — captura a lista de regras da nossa própria diretiva de
 # supressão escopada. A linha já vem em minúsculas quando é consultada.
 _ESTEIRA_IGNORE_SCOPE = re.compile(r"esteira:\s*ignore\s*\[([^\]]*)\]")
+# `zizmor: ignore` ou `zizmor: ignore[...]` — captura o texto completo da diretiva do
+# mantenedor para registrar em Supressao.diretiva (o escopo deles não mapeia pro nosso
+# check_id, então aqui não há filtro por regra, só o registro de qual linha foi revisada).
+_ZIZMOR_IGNORE = re.compile(r"zizmor:\s*ignore(?:\s*\[[^\]]*\])?")
+
+
+def _marcar_supressoes(wf: Workflow, out: list[Finding]) -> list[Finding]:
+    """Anexa a Supressao (se houver) a cada achado, sem apagar nenhum.
+
+    ``dataclasses.replace`` só entra para os poucos achados de fato suprimidos — o caso comum
+    (nenhuma diretiva na linha) devolve o próprio objeto, sem copiar. Testada contra regressão
+    quadrática (ver test_robustez_2026_07_30.py): copiar os 8000 achados de um workflow hostil
+    só para reatribuir o default ``None`` é trabalho que a varredura não precisa fazer.
+    """
+    return [
+        f
+        if (supressao := _supressao(wf, f)) is None
+        else dataclasses.replace(f, suppression=supressao)
+        for f in out
+    ]
 
 
 def run_all(wf: Workflow) -> list[Finding]:
@@ -224,7 +245,7 @@ def run_all(wf: Workflow) -> list[Finding]:
         )
     if wf.data is None:
         out += _fallback_checks(wf)
-        return [f for f in out if not _is_suppressed(wf, f)]
+        return _marcar_supressoes(wf, out)
     out += check_malformed_jobs(wf)
     out += check_triggers(wf)
     out += check_ppt_checkout(wf)
@@ -249,11 +270,14 @@ def run_all(wf: Workflow) -> list[Finding]:
     out += check_ai_rule_of_two(wf)
     out += check_cache_poisoning(wf)
     out += check_falsifiable_actor(wf)
-    return [f for f in out if not _is_suppressed(wf, f)]
+    return _marcar_supressoes(wf, out)
 
 
-def _is_suppressed(wf: Workflow, finding: Finding) -> bool:
-    """Respeita supressão inline '# zizmor: ignore' / '# esteira: ignore' na linha do achado.
+def _supressao(wf: Workflow, finding: Finding) -> Supressao | None:
+    """Supressão inline '# zizmor: ignore' / '# esteira: ignore' que casa com a linha do achado,
+    ou None se nenhuma casar. Nunca deleta o achado — quem chama anexa o resultado a
+    ``Finding.suppression`` via ``dataclasses.replace``, então o achado sobrevive no pipeline com
+    o motivo da supressão em vez de desaparecer sem rastro.
 
     Três formas, em ordem de precedência:
 
@@ -271,15 +295,23 @@ def _is_suppressed(wf: Workflow, finding: Finding) -> bool:
     lines = wf.lines
     index = finding.line - 1
     if not 0 <= index < len(lines):
-        return False
+        return None
     lowered = lines[index].lower()
     escopo = _ESTEIRA_IGNORE_SCOPE.search(lowered)
     if escopo is not None:
         regras = {r.strip() for r in escopo.group(1).split(",") if r.strip()}
-        return finding.check_id.lower() in regras
+        if finding.check_id.lower() in regras:
+            return Supressao(diretiva=escopo.group(0).strip())
+        return None
     if "esteira: ignore" in lowered:
-        return True
-    return "zizmor: ignore" in lowered
+        return Supressao(diretiva="esteira: ignore")
+    # Substring barata primeiro (é o caminho comum, percorrido por achado): só manda pro regex
+    # — que extrai o `[...]` de escopo do mantenedor, se houver — a minoria que já bateu aqui.
+    if "zizmor: ignore" in lowered:
+        zizmor = _ZIZMOR_IGNORE.search(lowered)
+        diretiva = zizmor.group(0).strip() if zizmor is not None else "zizmor: ignore"
+        return Supressao(diretiva=diretiva)
+    return None
 
 
 # --------------------------------------------------------------------------- #

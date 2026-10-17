@@ -37,7 +37,7 @@ def test_corpus_cetico_ci(caso: dict, tmp_path: Path) -> None:
 
     resultado = scan(tmp_path)
     escopo = set(caso["escopo_ids"])
-    observado = sorted({f.check_id for f in resultado.findings} & escopo)
+    observado = sorted({f.check_id for f in resultado.visiveis()} & escopo)
 
     assert observado == caso["esperado"], (
         f"{caso['id']} [{caso['tipo']}]: esperado {caso['esperado']}, veio {observado}. "

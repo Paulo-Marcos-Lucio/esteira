@@ -48,7 +48,7 @@ def test_evidencia_nao_vaza_credencial_literal(tmp_path: Path, credencial: str) 
         """,
     )
     resultado = scan(repo)
-    assert resultado.findings, "o caso precisa gerar achado, senão o teste não prova nada"
+    assert resultado.visiveis(), "o caso precisa gerar achado, senão o teste não prova nada"
     saida = to_json(resultado) + to_sarif(resultado)
     assert credencial not in saida
     assert credencial[:4] in saida, "a redação preserva o prefixo — é ele que diz QUAL credencial"
