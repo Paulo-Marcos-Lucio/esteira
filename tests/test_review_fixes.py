@@ -28,7 +28,7 @@ def _scan_text(tmp_path: Path, text: str, name: str = "w.yml") -> ScanResult:
 
 
 def _ids(tmp_path: Path, text: str) -> set[str]:
-    return {f.check_id for f in _scan_text(tmp_path, text).findings}
+    return {f.check_id for f in _scan_text(tmp_path, text).visiveis()}
 
 
 # --------------------------------------------------------------------------- #
@@ -150,7 +150,7 @@ def test_ppt_checkout_line_points_to_offending_ref(tmp_path: Path) -> None:
     """)
     findings = [
         f
-        for f in _scan_text(tmp_path, text).findings
+        for f in _scan_text(tmp_path, text).visiveis()
         if f.check_id == "pull-request-target-checkout"
     ]
     assert len(findings) == 1
@@ -390,7 +390,7 @@ def test_permissions_with_bool_key_does_not_abort_scan(tmp_path: Path) -> None:
     (wf_dir / "b.yml").write_text(
         "on: push\njobs:\n  x:\n    runs-on: self-hosted\n    steps: []\n", encoding="utf-8"
     )
-    ids = {f.check_id for f in scan(tmp_path).findings}
+    ids = {f.check_id for f in scan(tmp_path).visiveis()}
     assert "self-hosted-runner" in ids  # o 2º arquivo foi analisado → não abortou
 
 
@@ -700,7 +700,9 @@ def test_ppt_two_jobs_produce_two_distinct_findings(tmp_path: Path) -> None:
                   ref: ${{ github.head_ref }}
     """)
     findings = [
-        f for f in _scan_text(tmp_path, wf).findings if f.check_id == "pull-request-target-checkout"
+        f
+        for f in _scan_text(tmp_path, wf).visiveis()
+        if f.check_id == "pull-request-target-checkout"
     ]
     assert len(findings) == 2
     assert len({f.line for f in findings}) == 2  # linhas distintas, sem colapso
@@ -766,7 +768,7 @@ def test_script_injection_through_format_escaped_braces(tmp_path: Path) -> None:
 
 
 def _findings(tmp_path: Path, text: str) -> list:
-    return _scan_text(tmp_path, text).findings
+    return _scan_text(tmp_path, text).visiveis()
 
 
 # E1+E4 — reusable workflow: severidade LOW (não thirdparty HIGH) e cada job em sua linha.

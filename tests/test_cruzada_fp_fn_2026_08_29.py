@@ -19,7 +19,7 @@ def _ids(tmp_path: Path, text: str) -> set[str]:
     wf_dir = tmp_path / ".github" / "workflows"
     wf_dir.mkdir(parents=True, exist_ok=True)
     (wf_dir / "w.yml").write_text(text.lstrip("\n"), encoding="utf-8")
-    return {f.check_id for f in scan(tmp_path).findings}
+    return {f.check_id for f in scan(tmp_path).visiveis()}
 
 
 _SHA = "b4ffde65f46336ab88eb53be808477a3936bae11"

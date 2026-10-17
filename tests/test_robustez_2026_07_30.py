@@ -34,7 +34,7 @@ def _scan_ids(tmp_path: Path, text: str, name: str = "w.yml") -> set[str]:
     wf_dir = tmp_path / ".github" / "workflows"
     wf_dir.mkdir(parents=True, exist_ok=True)
     (wf_dir / name).write_text(text, encoding="utf-8")
-    return {f.check_id for f in scan(tmp_path).findings}
+    return {f.check_id for f in scan(tmp_path).visiveis()}
 
 
 # --------------------------------------------------------------------------- #
@@ -124,7 +124,7 @@ def test_jobs_as_list_finding_is_high_severity(tmp_path: Path) -> None:
     wf_dir.mkdir(parents=True)
     (wf_dir / "w.yml").write_text("on: push\njobs:\n  - runs-on: self-hosted\n", encoding="utf-8")
     result = scan(tmp_path)
-    inval = [f for f in result.findings if f.check_id == "invalid-yaml"]
+    inval = [f for f in result.visiveis() if f.check_id == "invalid-yaml"]
     assert inval and inval[0].severity is Severity.HIGH
 
 
