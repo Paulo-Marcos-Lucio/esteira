@@ -1,0 +1,178 @@
+[
+  {
+    "regra": "script-injection",
+    "zizmor": "template-injection",
+    "actionlint": "expression",
+    "octoscan": "expression-injection",
+    "poutine": "injection",
+    "nota": "checagem clássica (SecurityLab 2020); os quatro concorrentes a implementam."
+  },
+  {
+    "regra": "pull-request-target-checkout",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": "dangerous-checkout",
+    "poutine": null,
+    "nota": "poutine tem `untrusted_checkout_exec`, mas exige um passo de execução após o checkout; o caso canônico isola só o checkout do SHA do PR, sem payload, então a regra do poutine não dispara."
+  },
+  {
+    "regra": "dangerous-trigger",
+    "zizmor": "dangerous-triggers",
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "actionlint tem um aviso `events` no mesmo arquivo canônico, mas é uma checagem de schema ('no workflow is configured for \"workflow_run\" event') — reclamaria igual num `workflow_run` seguro e completo. Não é avaliação de segurança sobre o gatilho ser privilegiado, então não contamos como equivalente."
+  },
+  {
+    "regra": "unpinned-action-thirdparty",
+    "zizmor": "unpinned-uses",
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "poutine tem `github_action_from_unverified_creator_used`, mas mede autor verificado, não fixação por SHA — é outra pergunta de segurança, não contamos como equivalente."
+  },
+  {
+    "regra": "broad-permissions",
+    "zizmor": "excessive-permissions",
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "o audit do zizmor existe e está mapeado, mas na prática não disparou em `permissions: write-all` explícito neste corpus — ver resultado na tabela, não neste campo."
+  },
+  {
+    "regra": "secret-in-run",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": "dangerous-write",
+    "poutine": null,
+    "nota": "o octoscan só cobre a variante que exporta para `$GITHUB_ENV` (secret-github-env.yml); a variante que imprime no stdout (secret-no-log.yml) não tem equivalente em nenhum concorrente. Mesmo essa cobertura parcial é mais ampla do que parece: o octoscan sinaliza QUALQUER escrita em `$GITHUB_ENV`, não especificamente uma que carregue segredo — ele acerta este caso porque o valor escrito é um segredo, não porque reconheceu o segredo."
+  },
+  {
+    "regra": "curl-pipe-shell",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": "unverified_script_exec",
+    "nota": null
+  },
+  {
+    "regra": "self-hosted-runner",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": "runner-label",
+    "poutine": null,
+    "nota": "poutine tem `pr_runs_on_self_hosted`, mas só avalia workflows disparados por `pull_request`; o caso canônico usa `push`, então a regra do poutine não se aplica."
+  },
+  {
+    "regra": "unpinned-action-firstparty",
+    "zizmor": "unpinned-uses",
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": null
+  },
+  {
+    "regra": "unpinned-reusable-workflow",
+    "zizmor": "unpinned-uses",
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": null
+  },
+  {
+    "regra": "missing-permissions",
+    "zizmor": "excessive-permissions",
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "o audit do zizmor existe e está mapeado, mas relatado na linha do bloco do job (fora da tolerância de linha do rótulo, que aponta o topo do arquivo) — ver resultado na tabela. poutine tem `default_permissions_on_risky_events`, mas não disparou neste caso."
+  },
+  {
+    "regra": "secrets-inherit",
+    "zizmor": "secrets-inherit",
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "poutine tem `job_all_secrets`, mas não disparou neste caso."
+  },
+  {
+    "regra": "secret-to-thirdparty-action",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "nenhum concorrente modela o fluxo 'segredo chega a uma action de terceiro não fixada por SHA' como checagem própria."
+  },
+  {
+    "regra": "unpinned-container-image",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "nenhum dos quatro reportou qualquer achado neste arquivo."
+  },
+  {
+    "regra": "checkout-credentials-in-artifact",
+    "zizmor": "artipacked",
+    "actionlint": null,
+    "octoscan": "dangerous-artefact",
+    "poutine": null,
+    "nota": null
+  },
+  {
+    "regra": "invalid-yaml",
+    "zizmor": null,
+    "actionlint": "syntax-check",
+    "octoscan": null,
+    "poutine": null,
+    "nota": "numa varredura de diretório com outros arquivos válidos, zizmor, octoscan e poutine ignoram o arquivo quebrado em silêncio — nem reportam achado nem erro. Só o actionlint, que é fundamentalmente um parser/linter de sintaxe, sinaliza a falha de parse como achado."
+  },
+  {
+    "regra": "insecure-commands",
+    "zizmor": "insecure-commands",
+    "actionlint": null,
+    "octoscan": "unsecure-commands",
+    "poutine": null,
+    "nota": null
+  },
+  {
+    "regra": "known-compromised-action",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "poutine reporta `github_action_from_unverified_creator_used` na mesma linha, mas é uma checagem genérica de autor não verificado — não confirma que a ação É a mesma comprometida que o catálogo nomeado da Esteira cataloga por nome+versão. Contar como equivalente infla a cobertura do poutine, então não contamos."
+  },
+  {
+    "regra": "ai-agent-rule-of-two",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "poutine reporta `github_action_from_unverified_creator_used` na mesma linha (autor da action de IA não verificado), mas nenhum dos quatro concorrentes tem categoria de auditoria para agentes de IA — a coincidência de linha não é cobertura da regra."
+  },
+  {
+    "regra": "ai-agent-untrusted-input",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "mesma situação de `ai-agent-rule-of-two`: poutine coincide na linha por um motivo genérico e não relacionado; nenhum concorrente audita entrada não confiável para agente de IA."
+  },
+  {
+    "regra": "cache-poisoning",
+    "zizmor": null,
+    "actionlint": null,
+    "octoscan": null,
+    "poutine": null,
+    "nota": "nenhum dos quatro reportou qualquer achado neste arquivo."
+  },
+  {
+    "regra": "falsifiable-actor-condition",
+    "zizmor": "bot-conditions",
+    "actionlint": null,
+    "octoscan": "bot-check",
+    "poutine": null,
+    "nota": null
+  }
+]
