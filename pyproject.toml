@@ -37,6 +37,12 @@ dev = [
   "mypy>=2.4.0",
   "hypothesis>=6.168.5",
   "types-PyYAML>=6.0.12.20260906",
+  "mcp>=2.3.0",
+]
+# Extra, não dependência direta: o servidor MCP é um ponto de entrada opcional
+# (`esteira-mcp`), e quem só roda `esteira scan` não precisa do SDK do protocolo.
+mcp = [
+  "mcp>=2.3.0",
 ]
 
 [project.urls]
@@ -45,6 +51,7 @@ Repository = "https://github.com/Paulo-Marcos-Lucio/esteira"
 
 [project.scripts]
 esteira = "esteira.cli:main"
+esteira-mcp = "esteira.mcp_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/esteira"]

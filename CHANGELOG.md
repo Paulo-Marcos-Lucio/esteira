@@ -7,6 +7,11 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **Servidor MCP** (`esteira-mcp`, extra opcional `esteira[mcp]`): expõe a varredura a um
+  cliente MCP (ex.: Claude Code) por duas tools — `scan` (roda a Esteira e devolve o documento
+  `suite-appsec/1` completo, com os mesmos `only`/`skip` do CLI) e `rules` (lista o catálogo).
+  Módulo (`esteira/mcp_server.py`) isolado do `cli.py`: quem só usa `esteira scan` não paga a
+  dependência do SDK `mcp`.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de
