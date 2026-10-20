@@ -17,7 +17,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![448 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -93,7 +93,7 @@ In the same audit, `unpinned-container-image` now anchors the finding on the **s
 
 ## 🔬 What was measured
 
-Numbers from this run — all **reproducible with `pytest` in this repository** (443 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
+Numbers from this run — all **reproducible with `pytest` in this repository** (448 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
 
 > **Honest comparison against zizmor** (the domain's mature incumbent): the suite's reproducible benchmark lives at [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — pinned versions and commits — and it states where Esteira finds less than zizmor. Where Esteira wins is precision on a clean repository and calibration; **we don't sell coverage superiority**.
 
@@ -213,6 +213,20 @@ A `# zizmor: ignore` mark from another auditor is also honored as a "reviewed li
     sarif_file: esteira.sarif
 ```
 
+### MCP server
+
+For an MCP client (e.g. Claude Code) to run Esteira without going through a shell:
+
+```bash
+pip install -e ".[mcp]"   # or: pip install "esteira[mcp] @ git+https://github.com/Paulo-Marcos-Lucio/esteira.git"
+esteira-mcp                # stdio transport
+```
+
+Exposes two tools: `scan(path, only, skip)`, which returns the full `suite-appsec/1`
+document (the same contract as `esteira scan -f json`), and `rules()`, which lists the
+catalog. The `mcp` extra is optional — anyone who only uses `esteira scan` doesn't install
+the protocol SDK.
+
 ### Exit codes and `--fail-on`
 
 | Exit code | Meaning |
@@ -297,7 +311,8 @@ src/esteira/
 ├── core/        # models + loader (recursive workflow discovery, YAML parsing)
 ├── checks/      # declarative catalog, detectors (line-based + structural), engine
 ├── report/      # console (rich), json, sarif
-└── cli.py       # typer interface
+├── cli.py       # typer interface
+└── mcp_server.py # MCP server (optional `esteira[mcp]` extra)
 ```
 
 **Structural** detection: when the YAML parses, the checks walk the already-parsed tree (`jobs → steps → run/uses/with`). This way, `${{ }}` inside `env:` or inside a comment isn't mistaken for shell, `run:`'s *plain scalars* are covered in full, indirection through `env` (including chained indirection) is resolved, and bracket notation (`github['event']['issue']['title']`) is normalized before matching. Only when the file **fails** to parse does it fall back to a best-effort, line-based pass — and the syntax error itself becomes a high-severity `invalid-yaml` finding (**fail-closed**: an unanalyzed file doesn't sail through CI hidden behind an error). The loader handles the classic YAML 1.1 *gotcha* (`on:` → boolean `true`), and the scan is shielded per file: no single parse exception brings down the analysis of the rest. In a **monorepo**, discovery is recursive: it finds every `.github/workflows/` under the given path — the repository's own and each subproject's — pruning vendored dependency directories (`node_modules`, `vendor`, …) and hidden caches/VCS folders so it doesn't audit a dependency's CI as if it were your own.
@@ -306,7 +321,7 @@ src/esteira/
 
 ## 🔬 Engineering quality & method
 
-**Gates, measured right now in this repo:** 443 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (19 files) · `ruff` lint + format clean (58 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
+**Gates, measured right now in this repo:** 448 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (20 files) · `ruff` lint + format clean (60 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
 
 **A test that fails the façade, not the appearance.** Severity is what decides whether the client's CI fails; that's why it's pinned in an independent dict and compared against the catalog in `test_severidade_de_toda_checagem_esta_fixada` — downgrading `script-injection` from Critical to Low (which would open the gate) fails the suite before merge. A companion meta-test requires that **every** new check be born with a positive case that actually fires; and the ReDoS test **times itself**: the fixed form of `curl | bash` runs in < 0.5 s where the broken one took 7.1 s, with a sibling test guaranteeing that "got fast" didn't turn into "stopped detecting."
 
