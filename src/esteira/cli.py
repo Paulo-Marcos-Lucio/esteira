@@ -15,7 +15,8 @@ from rich.text import Text
 from esteira import __version__
 from esteira.checks.catalog import CATALOG, OWASP_EDITION
 from esteira.checks.engine import scan as run_scan
-from esteira.core.models import ScanResult, Severity
+from esteira.core.fixer import apply_safe_fixes
+from esteira.core.models import Finding, ScanResult, Severity
 from esteira.report import console as console_report
 from esteira.report.json_report import to_json
 from esteira.report.sarif import to_sarif
@@ -140,6 +141,71 @@ def _maybe_fail(result: ScanResult, fail_on: FailOn) -> None:
             )
         )
         raise typer.Exit(1)
+
+
+@app.command()
+def fix(
+    path: Path = typer.Argument(
+        Path("."),
+        exists=True,
+        help="Repositório, arquivo ou diretório de workflows.",
+    ),
+    safe: bool = typer.Option(
+        False, "--safe", help="Aplica as correções seguras e determinísticas do catálogo."
+    ),
+) -> None:
+    """Corrige automaticamente os achados que têm correção segura registrada no catálogo."""
+    fixable = sorted(check_id for check_id, meta in CATALOG.items() if meta.fixer is not None)
+    if not safe:
+        err.print(
+            Text.assemble(
+                ("esteira fix precisa de ", "yellow"),
+                ("--safe", "bold"),
+                (
+                    ": só existem correções determinísticas registradas (sem adivinhação), "
+                    "e a flag é explícita de propósito — não há modo implícito. Regras com "
+                    "correção disponível: ",
+                    "yellow",
+                ),
+                (", ".join(fixable), "dim"),
+                (".", "yellow"),
+            )
+        )
+        raise typer.Exit(2)
+
+    result = run_scan(path, only=fixable)
+    base = path if path.is_dir() else path.parent
+    por_arquivo: dict[str, list[Finding]] = {}
+    for finding in result.findings:
+        por_arquivo.setdefault(finding.path, []).append(finding)
+
+    total = 0
+    for caminho_relativo, findings in sorted(por_arquivo.items()):
+        arquivo = base / caminho_relativo
+        texto = arquivo.read_text(encoding="utf-8")
+        resultado = apply_safe_fixes(str(arquivo), texto, findings)
+        if not resultado.changed:
+            continue
+        arquivo.write_text(resultado.text, encoding="utf-8")
+        total += len(resultado.applied)
+        err.print(
+            Text.assemble(
+                ("corrigido ", "green"),
+                (caminho_relativo, "bold"),
+                f" ({len(resultado.applied)} achado(s)): ",
+                (", ".join(sorted({f.check_id for f in resultado.applied})), "dim"),
+            )
+        )
+
+    if total == 0:
+        err.print(
+            Text.assemble(
+                ("Nada a corrigir", "dim"),
+                f" ({result.files_scanned} arquivo(s) varrido(s); checagens com correção: ",
+                (", ".join(fixable), "dim"),
+                (").", "dim"),
+            )
+        )
 
 
 @app.command()
