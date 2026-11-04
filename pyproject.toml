@@ -31,12 +31,12 @@ dependencies = [
 # comportamento não foi verificado. Isso também torna redundantes os PRs do Dependabot que
 # só pediam para subir esses mesmos pisos.
 dev = [
-  "pytest>=9.1.1",
+  "pytest>=9.2.0",
   "pytest-cov>=7.1.0",
-  "ruff>=0.17.2",
-  "mypy>=2.4.0",
+  "ruff>=0.17.3",
+  "mypy>=2.4.1",
   "hypothesis>=6.168.5",
-  "types-PyYAML>=6.0.12.20260906",
+  "types-PyYAML>=6.0.12.20261030",
 ]
 
 [project.urls]
