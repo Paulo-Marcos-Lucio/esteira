@@ -1,0 +1,57 @@
+name: cache-compartilhado-mas-benigno
+on:
+  pull_request: {}
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * *'
+permissions: {}
+jobs:
+  build_pr_chave_por_run:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: node_modules
+          key: s1-deps-${{ github.event.pull_request.number }}
+  release_noturno_chave_por_run:
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: node_modules
+          key: s1-deps-${{ github.event.pull_request.number }}
+  build_pr_chave_propria:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: dist
+          key: s2-pr-cache
+  release_chave_diferente:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: dist
+          key: s2-release-cache
+  seed_somente_lancamento:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: build
+          key: s3-shared-build-cache
+  release_somente_lancamento:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: build
+          key: s3-shared-build-cache

@@ -17,7 +17,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![444 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -93,13 +93,13 @@ In the same audit, `unpinned-container-image` now anchors the finding on the **s
 
 ## 🔬 What was measured
 
-Numbers from this run — all **reproducible with `pytest` in this repository** (443 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
+Numbers from this run — all **reproducible with `pytest` in this repository** (444 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
 
 > **Honest comparison against zizmor** (the domain's mature incumbent): the suite's reproducible benchmark lives at [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — pinned versions and commits — and it states where Esteira finds less than zizmor. Where Esteira wins is precision on a clean repository and calibration; **we don't sell coverage superiority**.
 
 - **22 out of 22 checks** fire at the **test-pinned** severity against synthetic cases, with **zero severity drift**. The catalog meta-test is merciless: a new check is born red until it has a positive case, a declared severity, an OWASP label for the edition, and a row in this table — downgrading `script-injection` from Critical to Low (which would open the CI gate) fails the suite.
 - **Zero false positives** on the hardened workflow that **pins actions by SHA** and declares `permissions: contents: read`: it comes back with **no findings**. Pinning by SHA and declaring the minimum is exactly what the tool charges for — whoever already does it gets no noise.
-- **Labeled, versioned, public corpus** in [`bench/`](bench/): 23 positive workflows (**25 labeled findings**, covering **22 of 22** rules in the catalog) and 5 negatives with **8 trap lines**. `python bench/avaliar.py` measures recall and precision with a **Wilson interval** and exits with code 1 if a false positive or false negative shows up; the same battery runs under `pytest`, so a corpus that rots breaks CI. Measured on 2026-09-11: **25/25 recall, 95% CI [87% ; 100%], zero false positives**. **What this number is not:** the workflows were written by the same person who wrote the tool; it measures catalog coverage against canonical cases, not accuracy against production pipelines. The limits are listed in `bench/README.md`.
+- **Labeled, versioned, public corpus** in [`bench/`](bench/): 24 positive workflows (**26 labeled findings**, covering **22 of 22** rules in the catalog) and 6 negatives with **11 trap lines**. `python bench/avaliar.py` measures recall and precision with a **Wilson interval** and exits with code 1 if a false positive or false negative shows up; the same battery runs under `pytest`, so a corpus that rots breaks CI. Measured on 2026-09-27: **26/26 recall, 95% CI [87% ; 100%], zero false positives**. **What this number is not:** the workflows were written by the same person who wrote the tool; it measures catalog coverage against canonical cases, not accuracy against production pipelines. The limits are listed in `bench/README.md`.
 - **ReDoS eliminated in the gate itself.** The `curl | bash` pattern had exponential backtracking: a 129-character `run:` line stalled the scan for **7.1 s**, and every ~19 extra characters multiplied the time by ~14 (≈90 s on a ~150-character line, headed straight for the job *timeout* — the tool became the DoS of the very pipeline it audits). Today the same input takes **< 0.01 s** (measured: ~0.00002 s), with a **timing test** that fails on regression.
 
 ---
@@ -306,7 +306,7 @@ src/esteira/
 
 ## 🔬 Engineering quality & method
 
-**Gates, measured right now in this repo:** 443 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (19 files) · `ruff` lint + format clean (58 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
+**Gates, measured right now in this repo:** 444 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (19 files) · `ruff` lint + format clean (58 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
 
 **A test that fails the façade, not the appearance.** Severity is what decides whether the client's CI fails; that's why it's pinned in an independent dict and compared against the catalog in `test_severidade_de_toda_checagem_esta_fixada` — downgrading `script-injection` from Critical to Low (which would open the gate) fails the suite before merge. A companion meta-test requires that **every** new check be born with a positive case that actually fires; and the ReDoS test **times itself**: the fixed form of `curl | bash` runs in < 0.5 s where the broken one took 7.1 s, with a sibling test guaranteeing that "got fast" didn't turn into "stopped detecting."
 

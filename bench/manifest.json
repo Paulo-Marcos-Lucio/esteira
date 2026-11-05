@@ -229,5 +229,33 @@
   "eh_achado": true,
   "regra": "falsifiable-actor-condition",
   "nota": "porta de seguranca por github.actor == dependabot[bot] (falsificavel)"
+ },
+ {
+  "arquivo": "positivos/cache-poisoning-clinejection.yml",
+  "linha": 12,
+  "eh_achado": true,
+  "regra": "cache-poisoning",
+  "nota": "modela a mesma classe estrutural do incidente publico Clinejection (fev/2026): cache de dependencias compartilhado entre um workflow menos confiavel e um release noturno agendado. Usa pull_request/schedule (vetores que esta checagem ja reconhece) em vez do vetor real do incidente (issue_comment de um agente de IA), que ainda nao esta no conjunto de eventos nao-confiaveis desta checagem"
+ },
+ {
+  "arquivo": "negativos/cache-compartilhado-benigno.yml",
+  "linha": 14,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: chave de cache com github.event.pull_request.number (por-run) - nao colide entre o job de PR e o de release"
+ },
+ {
+  "arquivo": "negativos/cache-compartilhado-benigno.yml",
+  "linha": 30,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: escrita em contexto de PR e leitura em contexto de push, mas com CHAVES DIFERENTES (sem prefixo em comum) - nao ha colisao"
+ },
+ {
+  "arquivo": "negativos/cache-compartilhado-benigno.yml",
+  "linha": 46,
+  "eh_achado": false,
+  "regra": null,
+  "nota": "armadilha: escrita e leitura no MESMO contexto (push/push) - simetrico, sem separacao deliberada por gatilho"
  }
 ]

@@ -1,0 +1,24 @@
+name: cache-compartilhado-triagem-e-release-noturno
+on:
+  pull_request: {}
+  schedule:
+    - cron: '0 2 * * *'
+permissions: {}
+jobs:
+  triagem_de_issue:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/save@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: node_modules
+          key: deps-node_modules
+  release_noturno:
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache/restore@b4ffde65f46336ab88eb53be808477a3936bae11
+        with:
+          path: node_modules
+          key: deps-node_modules
+      - run: npm publish
