@@ -16,7 +16,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![447 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -92,7 +92,7 @@ Na mesma auditoria, `unpinned-container-image` passou a ancorar o achado na **ch
 
 ## 🔬 O que foi medido
 
-Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (443 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (447 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
 
 > **Comparação honesta contra o zizmor** (o incumbente maduro do domínio): o benchmark reprodutível da suíte está em [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — versões e commits fixados, e diz onde a Esteira encontra menos que o zizmor. Onde a Esteira ganha é precisão em repositório limpo e calibração; **não vendemos superioridade de cobertura**.
 
@@ -238,7 +238,7 @@ cabeçalho ausente — um scanner de segredo deve ter o gatilho mais sensível.
 `--only`/`--skip` reduzem o conjunto de checagens que de fato rodou. Uma varredura recortada e **sem achados** certifica só o que foi executado, não o repositório inteiro — tratá-la como aprovação seria verde falso eterno no CI de quem roda uma checagem isolada. Por isso a cobertura é **declarada**, nas três frentes:
 
 - **Console:** o veredito limpo é qualificado — `✓ Nenhum problema nas checagens executadas`, seguido de `Cobertura parcial (N de M checagens) … Não avaliado: <ids>`. A mesma linha sai também quando há achados (ter encontrado algo não prova que o resto do catálogo estava limpo).
-- **JSON:** um bloco `coverage` com `partial` (a bandeira que o dashboard lê), `ran`, `base_total` e `omitted_by_operator` (as checagens que ficaram de fora).
+- **JSON:** um bloco `coverage` com `partial` (a bandeira que o dashboard lê), `ran`, `base_total`, `omitted_by_operator` (as checagens que ficaram de fora por `--only`/`--skip`) e `known_gaps` (as classes que **nenhuma** checagem do catálogo cobre — constante por versão da ferramenta, independente do repositório e do recorte; é a seção "Limitações conhecidas" abaixo, também em máquina).
 - **Portão do CI:** uma varredura parcial **não passa verde** — sai com código `1` mesmo sem achados. Para rodar uma checagem isolada de propósito sem reprovar o build, use `--fail-on none` (a saída explícita, que desliga o portão inteiro).
 
 ---
@@ -306,7 +306,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ## 🔬 Qualidade de engenharia & método
 
-**Portões, medidos agora neste repo:** 443 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+**Portões, medidos agora neste repo:** 447 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
 
 **Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
 
@@ -336,7 +336,7 @@ Ferramenta **defensiva**, para auditar pipelines que você mantém ou tem autori
 Análise estática não substitui revisão humana, e a Esteira é honesta sobre o que **não** cobre hoje:
 
 - **Exfiltração de segredo por rede** (`curl -d "t=${{ secrets.X }}" host`) não é marcada: enviar um token a um host legítimo (`Authorization: Bearer`) é uso normal, e flagar geraria falso-positivo demais. São apontados o segredo impresso no stdout (`echo`/`printf` no `run:`, `console.log`/`core.info` no `github-script`) e o segredo exportado para `$GITHUB_ENV`. **`$GITHUB_OUTPUT` ainda não é apontado** — a propagação é análoga, mas não foi adjudicada em campo, e regra não medida é ruído em potencial.
-- **Propagação de taint por `steps.*.outputs` / `needs.*.outputs`** não é rastreada: se um step captura contexto não-confiável numa saída (`echo "x=${{ github.event.issue.title }}" >> "$GITHUB_OUTPUT"`) e **outro** step depois interpola `${{ steps.id.outputs.x }}` direto no `run:`, só a **linha de origem** é marcada — o segundo uso passa. É troca deliberada: marcar todo `steps.*.outputs`/`needs.*.outputs` no shell geraria falso-positivo demais (a maioria das saídas é de dado confiável). Feche a origem, que é onde o alerta aparece.
+- **Propagação de taint por `steps.*.outputs` / `needs.*.outputs`** não é rastreada: se um step captura contexto não-confiável numa saída (`echo "x=${{ github.event.issue.title }}" >> "$GITHUB_OUTPUT"`) e **outro** step depois interpola `${{ steps.id.outputs.x }}` direto no `run:`, só a **linha de origem** é marcada — o segundo uso passa. É troca deliberada: marcar todo `steps.*.outputs`/`needs.*.outputs` no shell geraria falso-positivo demais (a maioria das saídas é de dado confiável). Feche a origem, que é onde o alerta aparece. Também sai em máquina: `coverage.known_gaps` do JSON (id `outputs-propagation-untracked`).
 - **`with.args`/`entrypoint` de actions `docker://`** não são inspecionados; os sinks de execução varridos são `run:` e o `script:` do `actions/github-script`.
 - **Cobertura de runner** limita-se a labels literais e `matrix` resolvível estaticamente; um `runs-on` de expressão dinâmica não-resolvível não é classificado.
 - **`curl | bash` com mais de 3 wrappers encadeados** (`sudo env time nice …`) deixa de casar. É troca deliberada: a forma ilimitada do padrão era exponencial em backtracking e uma linha `run:` de 129 caracteres travava a varredura por 7 s (e ~160 caracteres, por horas) — DoS do próprio portão de auditoria.
