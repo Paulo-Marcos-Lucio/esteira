@@ -47,7 +47,7 @@ def _achados(tmp_path: Path, run: str) -> list[Finding]:
         """),
         encoding="utf-8",
     )
-    return [f for f in scan(tmp_path).findings if f.check_id == "secret-in-run"]
+    return [f for f in scan(tmp_path).visiveis() if f.check_id == "secret-in-run"]
 
 
 @pytest.mark.parametrize(

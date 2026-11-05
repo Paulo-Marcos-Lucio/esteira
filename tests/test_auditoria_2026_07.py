@@ -39,7 +39,7 @@ def _escrever(tmp_path: Path, texto: str, nome: str = "w.yml") -> Path:
 
 
 def _achados(tmp_path: Path, texto: str, cid: str | None = None) -> list[Finding]:
-    todos = scan(_escrever(tmp_path, texto)).findings
+    todos = scan(_escrever(tmp_path, texto)).visiveis()
     return [f for f in todos if cid is None or f.check_id == cid]
 
 
@@ -301,7 +301,7 @@ def test_composite_action_e_descoberta_pelo_loader(tmp_path: Path, rel: str) -> 
     alvo = tmp_path / rel
     alvo.parent.mkdir(parents=True, exist_ok=True)
     alvo.write_text(_ACTION_VULNERAVEL, encoding="utf-8")
-    ids = {f.check_id for f in scan(tmp_path).findings}
+    ids = {f.check_id for f in scan(tmp_path).visiveis()}
     assert {"script-injection", "unpinned-action-thirdparty"} <= ids
     assert "missing-permissions" not in ids  # arquivo de action não tem bloco 'permissions'
 
@@ -375,7 +375,7 @@ def test_caminho_relativo_tambem_quando_o_alvo_e_o_arquivo(tmp_path: Path) -> No
     wf = "on: push\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo oi\n"
     _escrever(tmp_path, wf)
     alvo = tmp_path / ".github" / "workflows" / "w.yml"
-    assert {f.path for f in scan(alvo).findings} == {"w.yml"}
+    assert {f.path for f in scan(alvo).visiveis()} == {"w.yml"}
 
 
 # =========================================================================== #
@@ -531,7 +531,7 @@ def test_dado_do_alvo_nao_e_interpretado_como_marcacao(tmp_path: Path) -> None:
     """
     wf = 'on: push\njobs:\n  "[/] [bold green]TUDO CERTO[/]":\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo oi\n'
     resultado = scan(_escrever(tmp_path, wf))
-    assert resultado.findings  # a varredura achou algo…
+    assert resultado.visiveis()  # a varredura achou algo…
 
     console = Console(file=io.StringIO(), width=200)
     render(resultado, console)  # …e o relatório NÃO levanta
@@ -601,7 +601,7 @@ def test_excecao_inesperada_vira_achado_e_nao_varredura_limpa(
     alvo = _escrever(tmp_path, wf)
     monkeypatch.setattr(engine_mod, "run_all", explode)
 
-    achados = scan(alvo).findings
+    achados = scan(alvo).visiveis()
     assert [f.check_id for f in achados] == ["invalid-yaml"]
     assert achados[0].severity is Severity.HIGH
     assert "RuntimeError" in achados[0].detail

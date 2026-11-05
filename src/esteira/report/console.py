@@ -42,7 +42,7 @@ def txt(value: object) -> Text:
 
 def render(result: ScanResult, console: Console | None = None) -> None:
     console = console or Console()
-    if not result.findings:
+    if not result.visiveis():
         if result.cobertura_parcial:
             # Varredura recortada e limpa NÃO é "nenhum problema": é "nenhum problema NAS
             # CHECAGENS EXECUTADAS". Sem qualificar, o verde afirmaria cobertura que não teve.
@@ -77,7 +77,7 @@ def render(result: ScanResult, console: Console | None = None) -> None:
     counts = _counts(result)
     parts = [f"[{_STYLE[s]}] {_LABEL[s]}: {counts[s]} [/]" for s in Severity if counts[s]]
     console.print(
-        f"\n[bold]{len(result.findings)} achado(s)[/] em {result.files_scanned} workflow(s) — "
+        f"\n[bold]{len(result.visiveis())} achado(s)[/] em {result.files_scanned} workflow(s) — "
         + "  ".join(parts)
     )
     # A cobertura também é impressa COM achados: ter encontrado algo não prova que o resto do
@@ -126,6 +126,6 @@ def _plano_de_acao(findings: list[Finding]) -> Panel:
 
 def _counts(result: ScanResult) -> dict[Severity, int]:
     counts = dict.fromkeys(Severity, 0)
-    for finding in result.findings:
+    for finding in result.visiveis():
         counts[finding.severity] += 1
     return counts
