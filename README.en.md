@@ -17,7 +17,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![456 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -40,7 +40,7 @@ Esteira finds these patterns and explains the fix — with line number and OWASP
 
 ## 🔎 What it checks
 
-The catalog's 22 checks — the same list `esteira rules` prints (a test fails CI if
+The catalog's 23 checks — the same list `esteira rules` prints (a test fails CI if
 this table diverges from the catalog, including on severity).
 
 | Check | Risk | Severity | OWASP 2025 / CWE |
@@ -67,6 +67,7 @@ this table diverges from the catalog, including on severity).
 | `ai-agent-untrusted-input` | AI agent exposed to untrusted input, no confirmed write channel (prompt injection) | 🟡 Medium | A05 · CWE-1427 |
 | `cache-poisoning` | Cache key written in an untrusted context and restored in a trusted one | 🟠 High | A03 · CWE-349 |
 | `falsifiable-actor-condition` | Security gate resting on `github.actor` (falsifiable) | 🟡 Medium | A01 · CWE-807 |
+| `unsound-condition` | `if:` provably always-true (literal `true` or self-comparison `X == X`) — gate does not exist | 🟡 Medium | A01 · CWE-670 |
 
 > **OWASP edition:** the labels are from **Top 10:2025**. The year matters — `A03` is *Software Supply
 > Chain Failures* in 2025 and was *Injection* in 2021. Anyone consuming the report by machine reads the
@@ -93,13 +94,13 @@ In the same audit, `unpinned-container-image` now anchors the finding on the **s
 
 ## 🔬 What was measured
 
-Numbers from this run — all **reproducible with `pytest` in this repository** (443 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
+Numbers from this run — all **reproducible with `pytest` in this repository** (456 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
 
 > **Honest comparison against zizmor** (the domain's mature incumbent): the suite's reproducible benchmark lives at [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — pinned versions and commits — and it states where Esteira finds less than zizmor. Where Esteira wins is precision on a clean repository and calibration; **we don't sell coverage superiority**.
 
-- **22 out of 22 checks** fire at the **test-pinned** severity against synthetic cases, with **zero severity drift**. The catalog meta-test is merciless: a new check is born red until it has a positive case, a declared severity, an OWASP label for the edition, and a row in this table — downgrading `script-injection` from Critical to Low (which would open the CI gate) fails the suite.
+- **23 out of 23 checks** fire at the **test-pinned** severity against synthetic cases, with **zero severity drift**. The catalog meta-test is merciless: a new check is born red until it has a positive case, a declared severity, an OWASP label for the edition, and a row in this table — downgrading `script-injection` from Critical to Low (which would open the CI gate) fails the suite.
 - **Zero false positives** on the hardened workflow that **pins actions by SHA** and declares `permissions: contents: read`: it comes back with **no findings**. Pinning by SHA and declaring the minimum is exactly what the tool charges for — whoever already does it gets no noise.
-- **Labeled, versioned, public corpus** in [`bench/`](bench/): 23 positive workflows (**25 labeled findings**, covering **22 of 22** rules in the catalog) and 5 negatives with **8 trap lines**. `python bench/avaliar.py` measures recall and precision with a **Wilson interval** and exits with code 1 if a false positive or false negative shows up; the same battery runs under `pytest`, so a corpus that rots breaks CI. Measured on 2026-09-11: **25/25 recall, 95% CI [87% ; 100%], zero false positives**. **What this number is not:** the workflows were written by the same person who wrote the tool; it measures catalog coverage against canonical cases, not accuracy against production pipelines. The limits are listed in `bench/README.md`.
+- **Labeled, versioned, public corpus** in [`bench/`](bench/): 24 positive workflows (**26 labeled findings**, covering **23 of 23** rules in the catalog) and 5 negatives with **8 trap lines**. `python bench/avaliar.py` measures recall and precision with a **Wilson interval** and exits with code 1 if a false positive or false negative shows up; the same battery runs under `pytest`, so a corpus that rots breaks CI. Measured on 2026-09-24: **26/26 recall, 95% CI [87% ; 100%], zero false positives**. **What this number is not:** the workflows were written by the same person who wrote the tool; it measures catalog coverage against canonical cases, not accuracy against production pipelines. The limits are listed in `bench/README.md`.
 - **ReDoS eliminated in the gate itself.** The `curl | bash` pattern had exponential backtracking: a 129-character `run:` line stalled the scan for **7.1 s**, and every ~19 extra characters multiplied the time by ~14 (≈90 s on a ~150-character line, headed straight for the job *timeout* — the tool became the DoS of the very pipeline it audits). Today the same input takes **< 0.01 s** (measured: ~0.00002 s), with a **timing test** that fails on regression.
 
 ---
@@ -245,11 +246,11 @@ missing header — a secrets scanner should have the more sensitive trigger.
 
 ## 🔓 Pro Version (private) — guided hardening of your CI/CD chain
 
-**The public version does complete, honest static detection for what it sets out to do** — the catalog of 22 checks that gates CI here, **100% offline**, with the field numbers (22 of 22 firing at the pinned severity, zero false positives on the hardened workflow). The **Pro** edition adds **active-confirmation code that is not in this repository** — the **`--online` compromised-action confirmator** (a *read-only* OSV/GHSA lookup for advisory freshness, sending only the action's **public name**, nothing from your repo) — plus the **service**: adjudicating each finding, applying the fix by PR, and re-checking. The edge isn't "more rules": it's **auditable confirm-don't-exploit + low-FP-with-a-number + BR/LGPD framing**.
+**The public version does complete, honest static detection for what it sets out to do** — the catalog of 23 checks that gates CI here, **100% offline**, with the field numbers (23 of 23 firing at the pinned severity, zero false positives on the hardened workflow). The **Pro** edition adds **active-confirmation code that is not in this repository** — the **`--online` compromised-action confirmator** (a *read-only* OSV/GHSA lookup for advisory freshness, sending only the action's **public name**, nothing from your repo) — plus the **service**: adjudicating each finding, applying the fix by PR, and re-checking. The edge isn't "more rules": it's **auditable confirm-don't-exploit + low-FP-with-a-number + BR/LGPD framing**.
 
 | Dimension | Public tool (you run it) | Pro · service (I run it with you) |
 | --- | --- | --- |
-| **Engine** | catalog of 22 checks, **100% offline**, same output | **the 22 offline checks + the `--online` confirmator** (OSV/GHSA *read-only*, Pro-only code absent from the public repo) — plus the human work on top |
+| **Engine** | catalog of 23 checks, **100% offline**, same output | **the 23 offline checks + the `--online` confirmator** (OSV/GHSA *read-only*, Pro-only code absent from the public repo) — plus the human work on top |
 | **Scope** | one repository / one path at a time | **whole organization / monorepo**, with every finding adjudicated (I discard the false positive, confirm the real one) |
 | **Finding** | flagged with line, severity, and fix | **fix applied via Pull Request**: SHA-pinning the actions, minimal per-job permissions, `pull_request_target` isolation, secrets kept out of logs — the *diff* ready to review and merge |
 | **Evidence** | console / JSON / SARIF report you generate | versioned SARIF/JSON **before × after** (OWASP **A03:2025 — Software Supply Chain Failures**), for audit and compliance |
@@ -276,7 +277,7 @@ flowchart TD
     A["<b>cli.py</b><br/>Typer · esteira scan"] --> ENG["<b>checks/engine.py</b><br/>orchestrates the scan"]
     ENG --> LOAD["<b>core/loader.py</b><br/>recursive discovery<br/>+ YAML parsing"]
     LOAD --> DET["<b>checks/detectors.py</b><br/>structural + line-based<br/>fallback · fail-closed"]
-    DET --> CAT["<b>checks/catalog.py</b><br/>22 checks · severity<br/>OWASP 2025 · CWE"]
+    DET --> CAT["<b>checks/catalog.py</b><br/>23 checks · severity<br/>OWASP 2025 · CWE"]
     CAT --> RED["<b>core/redaction.py</b><br/>masks credentials<br/>in the evidence"]
     RED --> FND["<b>core/models.py</b><br/>Finding + ScanResult<br/>frozen"]
     FND --> PRV["<b>core/provenance.py</b><br/>commit · ruleset_hash<br/>artifact_sha256"]
@@ -306,7 +307,7 @@ src/esteira/
 
 ## 🔬 Engineering quality & method
 
-**Gates, measured right now in this repo:** 443 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (19 files) · `ruff` lint + format clean (58 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
+**Gates, measured right now in this repo:** 456 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (19 files) · `ruff` lint + format clean (58 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
 
 **A test that fails the façade, not the appearance.** Severity is what decides whether the client's CI fails; that's why it's pinned in an independent dict and compared against the catalog in `test_severidade_de_toda_checagem_esta_fixada` — downgrading `script-injection` from Critical to Low (which would open the gate) fails the suite before merge. A companion meta-test requires that **every** new check be born with a positive case that actually fires; and the ReDoS test **times itself**: the fixed form of `curl | bash` runs in < 0.5 s where the broken one took 7.1 s, with a sibling test guaranteeing that "got fast" didn't turn into "stopped detecting."
 
