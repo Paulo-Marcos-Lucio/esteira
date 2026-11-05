@@ -7,6 +7,17 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **`esteira fix --safe`** — correção automática determinística, com `CheckMeta.fixer` registrado
+  por regra no catálogo: `unpinned-action-firstparty`/`-thirdparty` (pin por SHA resolvido via
+  `git ls-remote`, mantendo a tag original como comentário — `@<sha> # v4`), `missing-permissions`
+  (`permissions:\n  contents: read`) e `checkout-credentials-in-artifact`
+  (`persist-credentials: false`). Lê e escreve de volta com `ruamel.yaml` em modo round-trip
+  (`core/fixer.py`): preserva comentário, aspas e indentação originais, com o estilo de
+  sequência detectado por arquivo em vez de uma convenção só. Cada fixer é idempotente e
+  *fail-closed* — quando não consegue confirmar a correção (SHA não resolvido, linha não
+  encontrada, já corrigido), não toca no arquivo. `--safe` é obrigatória e explícita: sem ela,
+  `fix` recusa com exit `2` e lista as checagens com correção disponível. Nova dependência:
+  `ruamel.yaml`.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de

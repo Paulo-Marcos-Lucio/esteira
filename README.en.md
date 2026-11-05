@@ -17,7 +17,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![475 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -93,7 +93,7 @@ In the same audit, `unpinned-container-image` now anchors the finding on the **s
 
 ## 🔬 What was measured
 
-Numbers from this run — all **reproducible with `pytest` in this repository** (443 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
+Numbers from this run — all **reproducible with `pytest` in this repository** (475 passing tests). These aren't marketing estimates; they're the ruler that catches regressions.
 
 > **Honest comparison against zizmor** (the domain's mature incumbent): the suite's reproducible benchmark lives at [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — pinned versions and commits — and it states where Esteira finds less than zizmor. Where Esteira wins is precision on a clean repository and calibration; **we don't sell coverage superiority**.
 
@@ -241,6 +241,27 @@ missing header — a secrets scanner should have the more sensitive trigger.
 - **JSON:** a `coverage` block with `partial` (the flag the dashboard reads), `ran`, `base_total` and `omitted_by_operator` (the checks left out).
 - **CI gate:** a partial scan **does not pass green** — it exits with code `1` even with no findings. To run a single check on purpose without failing the build, use `--fail-on none` (the explicit escape hatch, which turns off the gate entirely).
 
+### Automatic fix — `esteira fix --safe`
+
+```bash
+esteira fix --safe .
+```
+
+Rewrites, in place, every finding whose check has a **deterministic** fix registered — never a
+guess: `unpinned-action-firstparty`/`-thirdparty` (resolves the tag to the commit SHA it points
+to right now, via `git ls-remote`, keeping the original tag as a comment:
+`uses: actions/checkout@<sha> # v4`), `missing-permissions` (adds
+`permissions:\n  contents: read`) and `checkout-credentials-in-artifact`
+(`persist-credentials: false` on the exposed checkout). The `--safe` flag is **required** and
+deliberately explicit — there's no implicit "unsafe" mode behind a default (yet).
+
+The file is read and written back **round-trip** (preserves the original comments, quoting and
+indentation style — never reformats what it didn't change), and every fix is **idempotent**:
+running `fix --safe` again on an already-fixed file touches nothing. When the pin fix can't
+confirm the current SHA (no network, or the tag no longer exists), it isn't applied —
+*fail-closed*, never a made-up SHA. `esteira fix` without `--safe` refuses and exits `2`,
+listing which checks have a fix available.
+
 ---
 
 ## 🔓 Pro Version (private) — guided hardening of your CI/CD chain
@@ -306,7 +327,7 @@ src/esteira/
 
 ## 🔬 Engineering quality & method
 
-**Gates, measured right now in this repo:** 443 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (19 files) · `ruff` lint + format clean (58 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
+**Gates, measured right now in this repo:** 475 passing tests (including *property-based* tests with Hypothesis) · **97%** coverage (gate `--cov-fail-under=93`, the measured value rounded down — an anti-regression lock, not an aspiration) · `mypy --strict` clean (21 files) · `ruff` lint + format clean (61 files) · CI on a **Python 3.10 / 3.11 / 3.12 / 3.13** matrix (`fail-fast: false`). The command lives in `pyproject.toml`, not in the YAML: dev and CI run the same line.
 
 **A test that fails the façade, not the appearance.** Severity is what decides whether the client's CI fails; that's why it's pinned in an independent dict and compared against the catalog in `test_severidade_de_toda_checagem_esta_fixada` — downgrading `script-injection` from Critical to Low (which would open the gate) fails the suite before merge. A companion meta-test requires that **every** new check be born with a positive case that actually fires; and the ReDoS test **times itself**: the fixed form of `curl | bash` runs in < 0.5 s where the broken one took 7.1 s, with a sibling test guaranteeing that "got fast" didn't turn into "stopped detecting."
 
@@ -352,6 +373,7 @@ Contributions that close these gaps (with regression tests) are welcome.
 - [x] Monorepo support (scanning multiple `.github/workflows`).
 - [x] Check for `GITHUB_TOKEN` passed to third-party actions.
 - [x] **Suggested** auto-fix (env indirection for script injection) — the finding ships with the fix pattern ready to apply (move the expression into `env:` and use `"$VAR"`/`process.env`); the tool suggests, it doesn't rewrite the YAML.
+- [x] **Applied** auto-fix (`esteira fix --safe`) — SHA pin (resolved via `git ls-remote`), `permissions: contents: read`, `persist-credentials: false`. Round-trip (preserves comments/style), idempotent, *fail-closed* when it can't confirm the SHA.
 - [ ] Dedicated secret-exfiltration detector (with a host allowlist).
 - [ ] Rules for GitLab CI and Azure Pipelines.
 

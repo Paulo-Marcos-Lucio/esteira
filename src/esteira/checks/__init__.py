@@ -19,5 +19,6 @@ from __future__ import annotations
 from esteira.checks import (  # noqa: F401  (import só pelo efeito de auto-registro no CATALOG)
     ai_workflow,
     compromised_actions,
+    fixes,
     hardening_extra,
 )

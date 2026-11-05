@@ -9,8 +9,9 @@ e no campo `owasp_edition` do JSON/SARIF, para quem consome por máquina.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from esteira.core.fixer import Fixer
 from esteira.core.models import Finding, Severity
 from esteira.core.redaction import redact
 
@@ -26,6 +27,11 @@ class CheckMeta:
     recommendation: str
     owasp: str | None = None
     cwe: str | None = None
+    # Correção determinística para achados desta regra, registrada por `checks.fixes`
+    # (via `dataclasses.replace`, já que o CheckMeta é congelado) — None para toda regra sem
+    # correção segura conhecida. `compare=False`/`repr=False`: um Callable não tem igualdade
+    # estrutural útil e poluiria qualquer assert/repr que comparasse CheckMeta por valor.
+    fixer: Fixer | None = field(default=None, compare=False, repr=False)
 
 
 CATALOG: dict[str, CheckMeta] = {

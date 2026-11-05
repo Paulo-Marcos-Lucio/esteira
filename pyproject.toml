@@ -23,6 +23,7 @@ dependencies = [
   "typer>=0.27.3",
   "rich>=15.0.0",
   "PyYAML>=6.0.3",
+  "ruamel.yaml>=0.19.1",
 ]
 
 [project.optional-dependencies]
@@ -69,7 +70,7 @@ disallow_untyped_decorators = false
 files = ["src"]
 
 [[tool.mypy.overrides]]
-module = ["typer.*", "rich.*"]
+module = ["typer.*", "rich.*", "ruamel.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

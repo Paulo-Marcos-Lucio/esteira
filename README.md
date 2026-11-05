@@ -16,7 +16,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![475 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -92,7 +92,7 @@ Na mesma auditoria, `unpinned-container-image` passou a ancorar o achado na **ch
 
 ## 🔬 O que foi medido
 
-Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (443 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (475 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
 
 > **Comparação honesta contra o zizmor** (o incumbente maduro do domínio): o benchmark reprodutível da suíte está em [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — versões e commits fixados, e diz onde a Esteira encontra menos que o zizmor. Onde a Esteira ganha é precisão em repositório limpo e calibração; **não vendemos superioridade de cobertura**.
 
@@ -241,6 +241,27 @@ cabeçalho ausente — um scanner de segredo deve ter o gatilho mais sensível.
 - **JSON:** um bloco `coverage` com `partial` (a bandeira que o dashboard lê), `ran`, `base_total` e `omitted_by_operator` (as checagens que ficaram de fora).
 - **Portão do CI:** uma varredura parcial **não passa verde** — sai com código `1` mesmo sem achados. Para rodar uma checagem isolada de propósito sem reprovar o build, use `--fail-on none` (a saída explícita, que desliga o portão inteiro).
 
+### Correção automática — `esteira fix --safe`
+
+```bash
+esteira fix --safe .
+```
+
+Corrige, no próprio arquivo, os achados cuja checagem tem uma correção **determinística**
+registrada — nunca um palpite: `unpinned-action-firstparty`/`-thirdparty` (resolve a tag para
+o SHA de commit que ela aponta agora, via `git ls-remote`, e mantém a tag original como
+comentário: `uses: actions/checkout@<sha> # v4`), `missing-permissions` (acrescenta
+`permissions:\n  contents: read`) e `checkout-credentials-in-artifact`
+(`persist-credentials: false` no checkout exposto). A flag `--safe` é **obrigatória** e
+explícita de propósito — não existe (ainda) um modo "não-seguro" por trás de um default.
+
+O arquivo é lido e escrito com **round-trip** (preserva comentário, aspas e estilo de
+indentação originais — nunca reformata o que não mudou) e cada correção é **idempotente**:
+rodar `fix --safe` de novo num arquivo já corrigido não toca nele. Quando a correção de
+pinagem não consegue confirmar o SHA atual (sem rede, ou a tag não existe mais), ela não é
+aplicada — *fail-closed*, nunca um SHA inventado. `esteira fix` sem `--safe` recusa e sai com
+`2`, listando as checagens que têm correção disponível.
+
 ---
 
 ## 🔓 Versão Pro (privada) — hardening conduzido da sua cadeia de CI/CD
@@ -306,7 +327,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ## 🔬 Qualidade de engenharia & método
 
-**Portões, medidos agora neste repo:** 443 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+**Portões, medidos agora neste repo:** 475 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (21 arquivos) · `ruff` lint + format limpos (61 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
 
 **Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
 
@@ -352,6 +373,7 @@ Contribuições que fechem esses gaps (com testes de regressão) são bem-vindas
 - [x] Suporte a monorepo (varrer múltiplos `.github/workflows`).
 - [x] Checagem de `GITHUB_TOKEN` passado a actions de terceiros.
 - [x] Auto-fix **sugerido** (env indirection para script injection) — o achado traz o padrão de correção pronto (mover a expressão para `env:` e usar `"$VAR"`/`process.env`); a ferramenta sugere, não reescreve o YAML.
+- [x] Auto-fix **aplicado** (`esteira fix --safe`) — pin por SHA (resolvido via `git ls-remote`), `permissions: contents: read`, `persist-credentials: false`. Round-trip (preserva comentário/estilo), idempotente, *fail-closed* quando não confirma o SHA.
 - [ ] Detector dedicado de exfiltração de segredo (com alowlist de hosts).
 - [ ] Regras para GitLab CI e Azure Pipelines.
 
