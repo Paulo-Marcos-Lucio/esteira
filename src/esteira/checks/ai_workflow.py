@@ -44,7 +44,7 @@ from typing import Any
 from esteira.checks.catalog import CATALOG, CheckMeta, make_finding
 from esteira.checks.detectors import _EXPR, _action_ref, _env_of, _steps_of
 from esteira.core.loader import trigger_names
-from esteira.core.models import Finding, Severity, Workflow
+from esteira.core.models import Confidence, Finding, FindingType, Severity, Workflow
 
 # --------------------------------------------------------------------------- #
 # catálogo (auto-registrado no fim do módulo)
@@ -62,6 +62,8 @@ CATALOG_ENTRIES: list[CheckMeta] = [
         "DADO — passe-o por variável de ambiente/arquivo, jamais colado no prompt como instrução.",
         "A05:2025 Injection",
         "CWE-1427",
+        finding_type=FindingType.TRIGGER,
+        confidence=Confidence.HIGH,
     ),
     CheckMeta(
         "ai-agent-untrusted-input",
@@ -73,6 +75,8 @@ CATALOG_ENTRIES: list[CheckMeta] = [
         "— senão ele completa a Regra de Dois (achado 'ai-agent-rule-of-two', ALTA).",
         "A05:2025 Injection",
         "CWE-1427",
+        finding_type=FindingType.TRIGGER,
+        confidence=Confidence.MEDIUM,
     ),
 ]
 
