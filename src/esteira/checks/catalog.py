@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from esteira.core.models import Finding, Severity
+from esteira.core.models import Confianca, Finding, Persona, Severity
 from esteira.core.redaction import redact
 
 # Edição do OWASP Top 10 usada nos rótulos deste catálogo.
@@ -26,6 +26,11 @@ class CheckMeta:
     recommendation: str
     owasp: str | None = None
     cwe: str | None = None
+    # Defaults de confiança/persona da checagem inteira. Nenhuma checagem existente foi
+    # calibrada ainda (isso é ES-05b) — por isso todas nascem ALTA/REGULAR, o mesmo
+    # comportamento visível de hoje, e make_finding aceita override por achado.
+    confidence: Confianca = Confianca.ALTA
+    persona: Persona = Persona.REGULAR
 
 
 CATALOG: dict[str, CheckMeta] = {
@@ -217,6 +222,8 @@ def make_finding(
     evidence: str | None = None,
     severity: Severity | None = None,
     fix_suggestion: str | None = None,
+    confidence: Confianca | None = None,
+    persona: Persona | None = None,
 ) -> Finding:
     meta = CATALOG[check_id]
     # Ponto de estrangulamento da redação. Poderia ficar em cada detector, mas então cada
@@ -235,4 +242,6 @@ def make_finding(
         cwe=meta.cwe,
         owasp=meta.owasp,
         fix_suggestion=redact(fix_suggestion),
+        confidence=confidence or meta.confidence,
+        persona=persona or meta.persona,
     )
