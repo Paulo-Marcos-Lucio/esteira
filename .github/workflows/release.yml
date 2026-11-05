@@ -1,0 +1,59 @@
+name: Release
+
+# Até este workflow, uma tag v*.*.* (criada à mão, ver CHANGELOG.md) nunca virava um GitHub
+# Release — o artefato publicado não tinha como o cliente verificar QUEM o construiu e A PARTIR
+# DE QUAL commit, só confiar no texto do CHANGELOG. Este job fecha essa lacuna: builda o sdist +
+# wheel e assina uma proveniência SLSA verificável (`actions/attest-build-provenance`, a mesma
+# que o GitHub usa para atestar seus próprios runners) — ninguém reconstrói o artefato
+# comparando hash, mas qualquer um confere que ELE saiu DESTE repositório, DESTE commit, por
+# ESTE workflow, sem precisar confiar em mais nada.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# Padrão do repositório: menor privilégio no topo; o job reafirma o que precisa.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build + proveniência SLSA + release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # gh release create
+      id-token: write # assinatura keyless (Sigstore) da proveniência
+      attestations: write # publica o atestado no repositório
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Build sdist e wheel
+        run: |
+          pip install build
+          python -m build
+      - name: Assina proveniência SLSA dos artefatos
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "dist/*"
+      - name: Publica o GitHub Release com os artefatos
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$REPO" \
+            --title "$TAG" \
+            --generate-notes \
+            --notes-start-tag "$TAG" \
+            --notes "Proveniência SLSA verificável: \`gh attestation verify <arquivo-baixado> --repo $REPO\`."
