@@ -7,6 +7,16 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
 
 ### Adicionado
 
+- **`esteira scan --desde <ref>`** — restringe a varredura aos workflows alterados sob
+  `.github/**` entre a referência git dada e o working tree (`git diff --name-only <ref> --
+  .github`, rodado no topo do repositório). Pensado para CI de PR: rodar `--desde origin/main`
+  audita só o que a mudança tocou, sem reabrir achado pré-existente em arquivo que ninguém
+  mexeu. O filtro é aplicado ANTES da varredura (na lista de arquivos descobertos, não nos
+  achados depois) — a garantia "nenhum achado fora do diff" vale por construção. Referência que
+  o git não resolve, ou alvo fora de um repositório git, saem com exit `2` em vez de silenciar a
+  checagem. Invariante property-based (Hypothesis) em `tests/test_desde.py`: para qualquer
+  subconjunto de workflows tocados num commit, nenhum achado reportado referencia um arquivo
+  fora desse subconjunto — mesmo com todos igualmente vulneráveis.
 - **Cinco checagens novas (catálogo 17 → 22), estáticas/offline** — fecham FN de classes quentes de
   2025-2026 sem tocar a infra do cliente:
   - `known-compromised-action` (🔴 Crítica, A03:2025) — casa `uses:` contra um snapshot DATADO de
