@@ -16,7 +16,7 @@
 [![MIT License](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-license.svg)](LICENSE)
 [![Ruff lint](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-ruff.svg)](https://github.com/astral-sh/ruff)
 [![Checked with mypy](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-mypy.svg)](https://mypy-lang.org/)
-[![443 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
+[![454 tests passing](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-tests.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![96% coverage](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-coverage.svg)](https://github.com/Paulo-Marcos-Lucio/esteira/actions/workflows/ci.yml)
 [![OWASP Top 10:2025](https://raw.githubusercontent.com/Paulo-Marcos-Lucio/esteira/main/assets/chip-owasp.svg)](https://owasp.org/Top10/)
 
@@ -92,7 +92,7 @@ Na mesma auditoria, `unpinned-container-image` passou a ancorar o achado na **ch
 
 ## 🔬 O que foi medido
 
-Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (443 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
+Números desta bateria — todos **reproduzíveis com `pytest` neste repositório** (454 testes verdes). Não são estimativa de marketing; são a régua que trava a regressão.
 
 > **Comparação honesta contra o zizmor** (o incumbente maduro do domínio): o benchmark reprodutível da suíte está em [guardiao/BENCHMARK.md](https://github.com/Paulo-Marcos-Lucio/guardiao/blob/main/BENCHMARK.md) — versões e commits fixados, e diz onde a Esteira encontra menos que o zizmor. Onde a Esteira ganha é precisão em repositório limpo e calibração; **não vendemos superioridade de cobertura**.
 
@@ -176,6 +176,10 @@ esteira scan .github/workflows/deploy.yml
 esteira scan . --only script-injection --only broad-permissions
 esteira scan . --skip unpinned-action-firstparty
 
+# grava os achados de hoje como baseline, depois audita ignorando-os no portão
+esteira baseline gravar . -o .esteira-baseline.json
+esteira scan . --baseline .esteira-baseline.json
+
 # lista as checagens
 esteira rules
 ```
@@ -189,6 +193,20 @@ esteira rules
 | `--fail-on` | `high` | `critical` afrouxa o portão; `low`/`medium` aperta. `none` nunca falha (só relata) |
 | `--only` | *(todas)* | foca uma triagem numa ou mais checagens (id da coluna `esteira rules`); id desconhecido → exit 2. Torna a varredura **parcial** — ver *Cobertura* |
 | `--skip` | *(nenhuma)* | silencia uma checagem ruidosa no seu contexto sem desligar o resto. Também torna a varredura **parcial** |
+| `--baseline` | *(nenhuma)* | achado com fingerprint já gravado por `esteira baseline gravar` sai com `origin=baseline` e não conta para `--fail-on`. Caminho inexistente ou arquivo inválido → exit 2 (fail-closed: nunca roda "sem baseline" em silêncio) |
+
+### Baseline (achados legados conhecidos)
+
+Um repositório que roda o Esteira pela primeira vez pode ter achados antigos que ninguém vai
+corrigir hoje. `esteira baseline gravar` fotografa os achados atuais pelo mesmo fingerprint
+estável do SARIF (sem o número da linha — reindentar o workflow não reabre o achado); `esteira
+scan --baseline` marca quem já estava na foto com `origin=baseline` no relatório, sem escondê-lo,
+e sem deixá-lo derrubar `--fail-on`:
+
+```bash
+esteira baseline gravar . -o .esteira-baseline.json
+esteira scan . --baseline .esteira-baseline.json   # só falha em achado NOVO
+```
 
 ### Supressão inline (por linha)
 
@@ -306,7 +324,7 @@ Detecção **estrutural**: quando o YAML parseia, as checagens iteram a árvore 
 
 ## 🔬 Qualidade de engenharia & método
 
-**Portões, medidos agora neste repo:** 443 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (19 arquivos) · `ruff` lint + format limpos (58 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
+**Portões, medidos agora neste repo:** 454 testes verdes (incluindo *property-based* com Hypothesis) · cobertura **97%** (gate `--cov-fail-under=93`, o medido arredondado para baixo — trava anti-regressão, não aspiração) · `mypy --strict` limpo (20 arquivos) · `ruff` lint + format limpos (60 arquivos) · CI em matriz **Python 3.10 / 3.11 / 3.12 / 3.13** (`fail-fast: false`). O comando mora no `pyproject.toml`, não no YAML: dev e CI rodam a mesma linha.
 
 **Teste que reprova a fachada, não a aparência.** A severidade é o que decide se o CI do cliente reprova; por isso ela é fixada num dict independente e comparada ao catálogo em `test_severidade_de_toda_checagem_esta_fixada` — rebaixar `script-injection` de Crítica para Baixa (o que abriria o portão) faz a suíte falhar antes do merge. Um meta-teste companheiro exige que **toda** checagem nova nasça com caso positivo que de fato dispara; e o teste de ReDoS **cronometra**: a forma corrigida do `curl | bash` roda em < 0,5 s onde a quebrada levava 7,1 s, com um teste irmão garantindo que "ficou rápido" não virou "parou de detectar".
 

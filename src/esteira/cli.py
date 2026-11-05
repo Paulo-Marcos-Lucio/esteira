@@ -15,6 +15,7 @@ from rich.text import Text
 from esteira import __version__
 from esteira.checks.catalog import CATALOG, OWASP_EDITION
 from esteira.checks.engine import scan as run_scan
+from esteira.core import baseline as baseline_core
 from esteira.core.models import ScanResult, Severity
 from esteira.report import console as console_report
 from esteira.report.json_report import to_json
@@ -25,7 +26,14 @@ app = typer.Typer(
     no_args_is_help=True,
     help="Esteira — audita a segurança de workflows do GitHub Actions.",
 )
+baseline_app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Gerencia baselines de achados já conhecidos.",
+)
+app.add_typer(baseline_app, name="baseline")
 err = Console(stderr=True)
+_BASELINE_PADRAO = Path(".esteira-baseline.json")
 
 
 class Format(str, Enum):
@@ -85,6 +93,12 @@ def scan(
     fail_on: FailOn = typer.Option(FailOn.high, "--fail-on", help="Severidade que faz sair com 1."),
     only: list[str] = typer.Option([], "--only", help="Roda apenas estas checagens."),
     skip: list[str] = typer.Option([], "--skip", help="Pula estas checagens."),
+    baseline: Path | None = typer.Option(
+        None,
+        "--baseline",
+        help="Arquivo gravado por 'esteira baseline gravar': achado já conhecido sai com "
+        "origem=baseline e não conta para --fail-on.",
+    ),
 ) -> None:
     """Audita os workflows do GitHub Actions."""
     unknown = sorted((set(only) | set(skip)) - set(CATALOG))
@@ -99,6 +113,13 @@ def scan(
         raise typer.BadParameter("só faz sentido com --format json|sarif.", param_hint="--output")
 
     result = run_scan(path, only=only or None, skip=skip or None)
+    if baseline is not None:
+        try:
+            fingerprints = baseline_core.carregar(baseline)
+        except baseline_core.BaselineInvalida as exc:
+            err.print(Text.assemble(("Baseline inválida: ", "red"), str(exc)))
+            raise typer.Exit(2) from exc
+        result = baseline_core.aplicar(result, fingerprints)
     if result.files_scanned == 0:
         # Aviso em stderr, NÃO no código de saída: o caminho existe (`exists=True` já barra o
         # typo com exit 2), então "nenhum workflow aqui" é um fato legítimo — um subprojeto de
@@ -161,6 +182,34 @@ def rules() -> None:
             f"{(meta.owasp or '—').split(':')[0]} · {meta.cwe or '—'}",
         )
     Console().print(table)
+
+
+@baseline_app.command("gravar")
+def baseline_gravar(
+    path: Path = typer.Argument(
+        Path("."),
+        exists=True,
+        help="Repositório, arquivo ou diretório de workflows.",
+    ),
+    output: Path = typer.Option(
+        _BASELINE_PADRAO, "--output", "-o", help="Arquivo de baseline a gravar."
+    ),
+    only: list[str] = typer.Option([], "--only", help="Roda apenas estas checagens."),
+    skip: list[str] = typer.Option([], "--skip", help="Pula estas checagens."),
+) -> None:
+    """Grava os achados de hoje como baseline: passam a sair com origem=baseline em 'scan'."""
+    unknown = sorted((set(only) | set(skip)) - set(CATALOG))
+    if unknown:
+        err.print(Text.assemble(("Checagem(ns) desconhecida(s): ", "red"), ", ".join(unknown)))
+        err.print(Text.assemble(("IDs válidos: ", "dim"), ", ".join(sorted(CATALOG))))
+        raise typer.Exit(2)
+    result = run_scan(path, only=only or None, skip=skip or None)
+    total = baseline_core.gravar(output, result)
+    err.print(
+        Text.assemble(
+            ("baseline gravada em ", "green"), (str(output), "bold"), f" — {total} achado(s)."
+        )
+    )
 
 
 def _force_utf8() -> None:
