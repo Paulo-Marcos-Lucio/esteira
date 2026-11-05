@@ -1,0 +1,11 @@
+name: ferramenta-de-seguranca-por-tag
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: gitleaks/gitleaks-action@v2
