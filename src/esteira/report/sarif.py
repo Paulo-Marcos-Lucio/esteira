@@ -85,7 +85,7 @@ def _fingerprint(finding: Finding, ordinal: int) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
 
-def _result(finding: Finding, ordinal: int) -> dict[str, Any]:
+def _result(finding: Finding, ordinal: int, suppression: str | None = None) -> dict[str, Any]:
     # O SARIF é PUBLICADO (sobe pro Code Scanning): toda evidência mascarada que sai daqui passa
     # por `para_publicacao` e encurta para KEEP_PUBLICADO=2 por ponta — o console/JSON de triagem
     # ficam em 4+4, o que sobe fica em 2+2. `para_publicacao` só encurta tokens `…`; texto sem
@@ -96,7 +96,7 @@ def _result(finding: Finding, ordinal: int) -> dict[str, Any]:
     region: dict[str, Any] = {"startLine": max(finding.line, 1)}
     if finding.evidence:
         region["snippet"] = {"text": redaction.para_publicacao(finding.evidence)}
-    return {
+    result: dict[str, Any] = {
         "ruleId": finding.check_id,
         "level": _LEVEL[finding.severity],
         "message": {"text": message},
@@ -110,16 +110,28 @@ def _result(finding: Finding, ordinal: int) -> dict[str, Any]:
             }
         ],
     }
+    if suppression is not None:
+        # `kind: inSource` é o valor do SARIF 2.1.0 para supressão declarada NO próprio arquivo
+        # analisado (o `# esteira: ignore`/`# zizmor: ignore` inline) — o outro valor, `external`,
+        # é para quem suprime fora do código (ex.: dismissal só no Code Scanning), que não é o
+        # nosso caso. Um resultado com `suppressions` some da lista "open" da aba Security mas
+        # continua no SARIF, auditável — dismissed, não apagado.
+        result["suppressions"] = [
+            {"kind": "inSource", "justification": redaction.para_publicacao(suppression) or ""}
+        ]
+    return result
 
 
 def _results(result: ScanResult) -> list[dict[str, Any]]:
     vistos: dict[tuple[str, str, str], int] = {}
     saida: list[dict[str, Any]] = []
-    for finding in result.sorted():
+    itens: list[tuple[Finding, str | None]] = [(f, None) for f in result.sorted()]
+    itens += [(s.finding, s.justification) for s in result.suppressed_sorted()]
+    for finding, justification in itens:
         chave = (finding.check_id, finding.path, finding.evidence or finding.detail)
         ordinal = vistos.get(chave, 0)
         vistos[chave] = ordinal + 1
-        saida.append(_result(finding, ordinal))
+        saida.append(_result(finding, ordinal, justification))
     return saida
 
 

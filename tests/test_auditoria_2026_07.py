@@ -599,7 +599,7 @@ def test_excecao_inesperada_vira_achado_e_nao_varredura_limpa(
 
     wf = "on: push\npermissions:\n  contents: read\njobs: {}\n"
     alvo = _escrever(tmp_path, wf)
-    monkeypatch.setattr(engine_mod, "run_all", explode)
+    monkeypatch.setattr(engine_mod, "run_all_partitioned", explode)
 
     achados = scan(alvo).findings
     assert [f.check_id for f in achados] == ["invalid-yaml"]

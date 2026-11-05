@@ -14,7 +14,7 @@ from typing import Any
 from esteira import __version__
 from esteira.checks.catalog import OWASP_EDITION
 from esteira.core import provenance
-from esteira.core.models import Finding, ScanResult, Severity
+from esteira.core.models import Finding, ScanResult, Severity, SuppressedFinding
 
 SCHEMA = "suite-appsec/1"
 
@@ -34,6 +34,12 @@ def finding_to_dict(finding: Finding) -> dict[str, Any]:
         "recommendation": finding.recommendation,
         "fix_suggestion": finding.fix_suggestion,
     }
+
+
+def suppressed_finding_to_dict(suppressed: SuppressedFinding) -> dict[str, Any]:
+    document = finding_to_dict(suppressed.finding)
+    document["justification"] = suppressed.justification
+    return document
 
 
 def to_document(result: ScanResult) -> dict[str, Any]:
@@ -64,8 +70,13 @@ def to_document(result: ScanResult) -> dict[str, Any]:
             "total": len(findings),
             "by_severity": counts,
             "files_scanned": result.files_scanned,
+            # Achados calados por diretiva inline não contam no `total` nem no `by_severity`
+            # (o portão do CI já os ignorava); este número é só o que ficou de fora, para quem
+            # lê o JSON perceber a supressão sem precisar contar `suppressed` à mão.
+            "suppressed": len(result.suppressed),
         },
         "findings": [finding_to_dict(f) for f in findings],
+        "suppressed": [suppressed_finding_to_dict(s) for s in result.suppressed_sorted()],
     }
     # Por último e sobre o documento já completo: o auto-hash cobre TUDO o mais, inclusive a
     # proveniência acima. Trocar o commit depois da entrega invalida o hash.
