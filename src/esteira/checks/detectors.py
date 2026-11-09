@@ -128,8 +128,12 @@ _CURL_PROCSUBST = re.compile(_INTERP + r"\b[^\n]*<\(\s*" + _WRAPPERS + _CURL + r
 # 3) Substituição de comando: `sh -c "$(curl …)"` / `bash -c \`curl …\`` (Homebrew/oh-my-zsh).
 _CURL_CMDSUBST = re.compile(_INTERP + r"\b[^\n]*\s-c\b[^\n]*(?:\$\(|`)[^\n]*" + _CURL + r"\b")
 # 4) Equivalente PowerShell: `iwr … | iex` / `Invoke-WebRequest … | Invoke-Expression` (Chocolatey).
+# Mesma ancora de POSIÇÃO DE COMANDO das formas POSIX (`_LEAD_CMD`): sem ela, a sequência
+# `iwr|iex` dentro do argumento entre aspas de um comando de impressão (echo/printf/
+# Write-Host/Write-Output) também disparava — falso-positivo simétrico ao que C14 corrigiu
+# para `curl|bash`.
 _IWR_IEX = re.compile(
-    r"(?:iwr|irm|curl|wget|invoke-webrequest|invoke-restmethod)\b[^\n]*\|[^\n]*"
+    _LEAD_CMD + r"(?:iwr|irm|curl|wget|invoke-webrequest|invoke-restmethod)\b[^\n]*\|[^\n]*"
     r"\b(?:iex|invoke-expression)\b",
     re.IGNORECASE,
 )

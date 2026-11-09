@@ -751,6 +751,14 @@ def test_curl_pipe_in_echoed_string_is_not_flagged(tmp_path: Path) -> None:
     assert "curl-pipe-shell" not in _ids(tmp_path, wf)
 
 
+# AUD0908-esteira-fp-iwr-iex-sem-ancora — o equivalente PowerShell de C14, nunca fechado:
+# `iwr|iex` dentro de string ecoada (texto de ajuda) também era falso-positivo, porque
+# `_IWR_IEX` era a única variante de `_curl_pipe_hit` sem a ancora `_LEAD_CMD`.
+def test_iwr_iex_in_echoed_string_is_not_flagged(tmp_path: Path) -> None:
+    wf = _one_step_run('echo "To install run iwr https://get.foo | iex"')
+    assert "curl-pipe-shell" not in _ids(tmp_path, wf)
+
+
 # C15 — format() com chaves escapadas {{ }} quebrava o _EXPR e escondia a injeção.
 def test_script_injection_through_format_escaped_braces(tmp_path: Path) -> None:
     wf = _one_step_run(
