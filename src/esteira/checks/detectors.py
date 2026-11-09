@@ -126,7 +126,12 @@ _CURL_PIPE = re.compile(
 # 2) Substituição de processo: `bash <(curl …)` — idioma do codecov, sem pipe mas mesmo efeito.
 _CURL_PROCSUBST = re.compile(_INTERP + r"\b[^\n]*<\(\s*" + _WRAPPERS + _CURL + r"\b")
 # 3) Substituição de comando: `sh -c "$(curl …)"` / `bash -c \`curl …\`` (Homebrew/oh-my-zsh).
-_CURL_CMDSUBST = re.compile(_INTERP + r"\b[^\n]*\s-c\b[^\n]*(?:\$\(|`)[^\n]*" + _CURL + r"\b")
+# O `$(`/backtick precisa ser o INÍCIO do argumento do `-c` (logo após ele, com no máximo uma
+# aspa entre os dois) — não qualquer substituição de comando mais adiante na linha. Sem essa
+# ancora, `sh -c "<cmd inofensivo>" && VAR=$(curl …)` (captura para variável, sem executar o
+# baixado) também disparava: o `[^\n]*` entre `-c` e `$(` atravessava a aspa de fechamento do
+# `-c` e o `&&` para casar uma substituição de comando sem relação com o que o `-c` executa.
+_CURL_CMDSUBST = re.compile(_INTERP + r"\b[^\n]*\s-c\b\s*['\"]?(?:\$\(|`)[^\n]*" + _CURL + r"\b")
 # 4) Equivalente PowerShell: `iwr … | iex` / `Invoke-WebRequest … | Invoke-Expression` (Chocolatey).
 _IWR_IEX = re.compile(
     r"(?:iwr|irm|curl|wget|invoke-webrequest|invoke-restmethod)\b[^\n]*\|[^\n]*"
