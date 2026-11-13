@@ -30,6 +30,18 @@ _RANK: dict[Severity, int] = {
 
 
 @dataclass(frozen=True)
+class Supressao:
+    """Por que um achado foi suprimido — a diretiva inline que casou, verbatim.
+
+    Substitui o bool que ``_supressao()`` devolvia antes: um ``True`` não dizia SE foi
+    ``# esteira: ignore`` ou ``# zizmor: ignore[...]``, nem qual diretiva da linha casou
+    quando havia mais de uma. Guardar o texto reconstrói essa resposta sem reabrir o arquivo.
+    """
+
+    diretiva: str
+
+
+@dataclass(frozen=True)
 class Finding:
     check_id: str
     title: str
@@ -45,6 +57,10 @@ class Finding:
     # script-injection). Complementa a 'recommendation' genérica do catálogo; None quando
     # a checagem não gera uma sugestão acionável por achado.
     fix_suggestion: str | None = None
+    # Supressão inline que casou com a linha deste achado, ou None se nenhuma casou. O achado
+    # NUNCA é apagado por causa disto (ver ScanResult.visiveis/suprimidos) — fica registrado,
+    # com o motivo, em vez de desaparecer do pipeline sem deixar rastro.
+    suppression: Supressao | None = None
 
 
 @dataclass
@@ -102,10 +118,20 @@ class ScanResult:
         """Quantas checagens do catálogo de fato rodaram — o numerador do laudo de cobertura."""
         return self.checagens_total - len(self.checagens_omitidas)
 
+    def visiveis(self) -> list[Finding]:
+        """Achados sem supressão que casou — o que conta para severidade e portão de saída."""
+        return [f for f in self.findings if f.suppression is None]
+
+    def suprimidos(self) -> list[Finding]:
+        """Achados com supressão que casou. Continuam em ``findings`` (nada é deletado no
+        pipeline); este é só o recorte para quem quer auditar o que foi calado e por quê."""
+        return [f for f in self.findings if f.suppression is not None]
+
     def max_severity(self) -> Severity | None:
-        if not self.findings:
+        visiveis = self.visiveis()
+        if not visiveis:
             return None
-        return max((f.severity for f in self.findings), key=lambda s: s.rank)
+        return max((f.severity for f in visiveis), key=lambda s: s.rank)
 
     def sorted(self) -> list[Finding]:
-        return sorted(self.findings, key=lambda f: (-f.severity.rank, f.path, f.line))
+        return sorted(self.visiveis(), key=lambda f: (-f.severity.rank, f.path, f.line))

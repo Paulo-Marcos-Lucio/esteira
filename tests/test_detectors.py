@@ -7,7 +7,7 @@ from esteira.core.models import Severity
 
 
 def _ids(root: Path) -> set[str]:
-    return {f.check_id for f in scan(root).findings}
+    return {f.check_id for f in scan(root).visiveis()}
 
 
 def test_vuln_workflow_triggers_all_families(vuln_repo: Path) -> None:
@@ -27,17 +27,17 @@ def test_vuln_workflow_triggers_all_families(vuln_repo: Path) -> None:
 
 
 def test_safe_workflow_is_clean(safe_repo: Path) -> None:
-    assert scan(safe_repo).findings == []
+    assert scan(safe_repo).visiveis() == []
 
 
 def test_script_injection_has_line_number(vuln_repo: Path) -> None:
-    findings = [f for f in scan(vuln_repo).findings if f.check_id == "script-injection"]
+    findings = [f for f in scan(vuln_repo).visiveis() if f.check_id == "script-injection"]
     assert findings
     assert all(f.line > 0 for f in findings)
 
 
 def test_thirdparty_is_high_firstparty_is_low(vuln_repo: Path) -> None:
-    findings = scan(vuln_repo).findings
+    findings = scan(vuln_repo).visiveis()
     third = next(f for f in findings if f.check_id == "unpinned-action-thirdparty")
     first = next(f for f in findings if f.check_id == "unpinned-action-firstparty")
     assert third.severity is Severity.HIGH
@@ -45,9 +45,9 @@ def test_thirdparty_is_high_firstparty_is_low(vuln_repo: Path) -> None:
 
 
 def test_only_and_skip_filters(vuln_repo: Path) -> None:
-    only = {f.check_id for f in scan(vuln_repo, only=["curl-pipe-shell"]).findings}
+    only = {f.check_id for f in scan(vuln_repo, only=["curl-pipe-shell"]).visiveis()}
     assert only == {"curl-pipe-shell"}
-    skipped = {f.check_id for f in scan(vuln_repo, skip=["script-injection"]).findings}
+    skipped = {f.check_id for f in scan(vuln_repo, skip=["script-injection"]).visiveis()}
     assert "script-injection" not in skipped
 
 
@@ -57,7 +57,7 @@ def test_missing_permissions_detected(tmp_path: Path) -> None:
     wf.write_text(
         "on: push\njobs:\n  b:\n    runs-on: ubuntu-latest\n    steps: []\n", encoding="utf-8"
     )
-    ids = {f.check_id for f in scan(tmp_path).findings}
+    ids = {f.check_id for f in scan(tmp_path).visiveis()}
     assert "missing-permissions" in ids
 
 
@@ -80,7 +80,7 @@ def _write(tmp_path: Path, body: str) -> Path:
 
 
 def _findings(tmp_path: Path, cid: str = "secret-to-thirdparty-action") -> list:
-    return [f for f in scan(tmp_path).findings if f.check_id == cid]
+    return [f for f in scan(tmp_path).visiveis() if f.check_id == cid]
 
 
 def test_token_to_unpinned_thirdparty_is_flagged(tmp_path: Path) -> None:
@@ -243,7 +243,7 @@ def _write_full(tmp_path: Path, content: str) -> Path:
 
 
 def _injections(root: Path) -> list:
-    return [f for f in scan(root).findings if f.check_id == "script-injection"]
+    return [f for f in scan(root).visiveis() if f.check_id == "script-injection"]
 
 
 _DISPATCH = (

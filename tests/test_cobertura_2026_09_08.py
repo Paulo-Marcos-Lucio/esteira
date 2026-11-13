@@ -85,7 +85,7 @@ def test_skip_tambem_torna_a_varredura_parcial(repo_seguro: Path) -> None:
 def test_scan_recortado_declara_as_omitidas(repo_seguro: Path) -> None:
     # O caso do achado (--somente uma checagem que não casa o alvo): limpo, MAS parcial.
     r = scan(repo_seguro, only={"script-injection"})
-    assert not r.findings
+    assert not r.visiveis()
     assert r.cobertura_parcial is True
     assert r.checagens_omitidas  # não-vazio
     assert "broad-permissions" in r.checagens_omitidas  # uma checagem não-executada
@@ -94,7 +94,7 @@ def test_scan_recortado_declara_as_omitidas(repo_seguro: Path) -> None:
 
 def test_scan_completo_certifica_cobertura_plena(repo_seguro: Path) -> None:
     r = scan(repo_seguro)
-    assert not r.findings
+    assert not r.visiveis()
     assert r.cobertura_parcial is False
     assert r.checagens_omitidas == ()
     assert r.checagens_executadas == r.checagens_total == len(_CATALOGO)
