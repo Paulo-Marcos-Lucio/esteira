@@ -22,7 +22,7 @@ classifiers = [
 dependencies = [
   "typer>=0.29.1",
   "rich>=15.0.0",
-  "PyYAML>=6.0.3",
+  "PyYAML>=6.0.4",
 ]
 
 [project.optional-dependencies]
@@ -33,10 +33,10 @@ dependencies = [
 dev = [
   "pytest>=9.2.0",
   "pytest-cov>=7.1.0",
-  "ruff>=0.17.5",
+  "ruff>=0.17.6",
   "mypy>=2.4.1",
   "hypothesis>=6.168.5",
-  "types-PyYAML>=6.0.12.20261113",
+  "types-PyYAML>=6.0.12.20261122",
 ]
 
 [project.urls]
